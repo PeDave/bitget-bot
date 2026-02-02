@@ -10,6 +10,8 @@ public class BitgetController : ControllerBase
     private readonly IMarketDataService _marketDataService;
     private readonly ITradingService _tradingService;
     private readonly IAccountBalanceService _accountBalanceService;
+    private readonly IFuturesPositionService _futuresPositionService;
+    private readonly IAccountValuationService _accountValuationService;
     private readonly IBitgetClientFactory _clientFactory;
     private readonly ILogger<BitgetController> _logger;
 
@@ -17,12 +19,16 @@ public class BitgetController : ControllerBase
         IMarketDataService marketDataService,
         ITradingService tradingService,
         IAccountBalanceService accountBalanceService,
+        IFuturesPositionService futuresPositionService,
+        IAccountValuationService accountValuationService,
         IBitgetClientFactory clientFactory,
         ILogger<BitgetController> logger)
     {
         _marketDataService = marketDataService;
         _tradingService = tradingService;
         _accountBalanceService = accountBalanceService;
+        _futuresPositionService = futuresPositionService;
+        _accountValuationService = accountValuationService;
         _clientFactory = clientFactory;
         _logger = logger;
     }
@@ -257,6 +263,98 @@ public class BitgetController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to get futures balances");
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
+    }
+
+    [HttpGet("futures/positions")]
+    public async Task<IActionResult> GetFuturesPositions(
+        [FromQuery] bool nonZeroOnly = false,
+        [FromQuery] bool includeUsdt = true,
+        [FromQuery] bool includeUsdc = true,
+        [FromQuery] string? usdtMarginAsset = null,
+        [FromQuery] string? usdcMarginAsset = null,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var positions = await _futuresPositionService.GetFuturesPositionsAsync(
+                includeUsdt,
+                includeUsdc,
+                usdtMarginAsset,
+                usdcMarginAsset,
+                cancellationToken);
+            
+            // Apply filter
+            if (nonZeroOnly)
+            {
+                positions = positions.Where(p => p.Total != 0);
+            }
+            
+            var positionList = positions.ToList();
+            
+            return Ok(new
+            {
+                success = true,
+                data = positionList,
+                count = positionList.Count
+            });
+        }
+        catch (BitgetApiException ex)
+        {
+            _logger.LogError(ex, "Bitget API error while getting futures positions");
+            return StatusCode(502, new
+            {
+                success = false,
+                error = "Failed to retrieve futures positions from Bitget",
+                message = ex.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get futures positions");
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
+    }
+
+    [HttpGet("account/valuation")]
+    public async Task<IActionResult> GetAccountValuation(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var valuations = await _accountValuationService.GetAccountValuationAsync(cancellationToken);
+            var valuationList = valuations.ToList();
+            
+            return Ok(new
+            {
+                success = true,
+                data = valuationList,
+                count = valuationList.Count
+            });
+        }
+        catch (BitgetApiException ex)
+        {
+            _logger.LogError(ex, "Bitget API error while getting account valuation");
+            return StatusCode(502, new
+            {
+                success = false,
+                error = "Failed to retrieve account valuation from Bitget",
+                message = ex.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get account valuation");
             return StatusCode(500, new
             {
                 success = false,
