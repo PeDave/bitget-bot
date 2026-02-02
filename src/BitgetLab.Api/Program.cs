@@ -17,6 +17,8 @@ builder.Services.AddSingleton<IBitgetClientFactory, BitgetClientFactory>();
 builder.Services.AddSingleton<IMarketDataService, MarketDataService>();
 builder.Services.AddSingleton<ITradingService, TradingService>();
 builder.Services.AddSingleton<IAccountBalanceService, AccountBalanceService>();
+builder.Services.AddSingleton<IFuturesPositionService, FuturesPositionService>();
+builder.Services.AddSingleton<IAccountValuationService, AccountValuationService>();
 
 // Register system services
 builder.Services.AddSingleton<ISystemMetricsService, SystemMetricsService>();

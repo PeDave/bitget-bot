@@ -155,6 +155,24 @@ curl http://localhost:3001/api/bitget/futures/balances
 # Get futures balances with filter (only show non-zero balances)
 curl "http://localhost:3001/api/bitget/futures/balances?nonZeroOnly=true"
 
+# Get futures positions (USDT and USDC futures)
+curl http://localhost:3001/api/bitget/futures/positions
+
+# Get futures positions with filter (only show non-zero positions)
+curl "http://localhost:3001/api/bitget/futures/positions?nonZeroOnly=true"
+
+# Get only USDT futures positions
+curl "http://localhost:3001/api/bitget/futures/positions?includeUsdc=false"
+
+# Get only USDC futures positions
+curl "http://localhost:3001/api/bitget/futures/positions?includeUsdt=false"
+
+# Get futures positions with custom margin asset
+curl "http://localhost:3001/api/bitget/futures/positions?usdtMarginAsset=USDT&usdcMarginAsset=USDC"
+
+# Get account valuation (total balance across all account types)
+curl http://localhost:3001/api/bitget/account/valuation
+
 # Place order (requires Trade mode, returns 403 in ReadOnly mode)
 curl -X POST http://localhost:3001/api/bitget/orders \
   -H "Content-Type: application/json" \
@@ -361,7 +379,94 @@ The Bitget SDK has been successfully integrated using git submodules. The integr
 
 - **Market Data API**: Get symbols, tickers, and real-time market data
 - **Trading API**: Place orders (requires Trade mode)
+- **Account Balance API**: Get spot and futures account balances
+- **Futures Position API**: Get open positions in USDT and USDC futures
+- **Account Valuation API**: Get total account valuation across all account types
 - **Mode-based Security**: ReadOnly mode prevents accidental trades
+
+### Available Endpoints
+
+#### 1. Futures Positions
+**Endpoint**: `GET /api/bitget/futures/positions`
+
+Retrieves open futures positions for USDT and/or USDC futures markets.
+
+**Query Parameters**:
+- `nonZeroOnly` (bool, default: false) - Filter to show only non-zero positions
+- `includeUsdt` (bool, default: true) - Include USDT futures positions
+- `includeUsdc` (bool, default: true) - Include USDC futures positions
+- `usdtMarginAsset` (string, optional) - Override margin asset for USDT futures (default: "USDT")
+- `usdcMarginAsset` (string, optional) - Override margin asset for USDC futures (default: "USDC")
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "symbol": "BTCUSDT",
+      "positionSide": "Long",
+      "total": 0.5,
+      "available": 0.5,
+      "averageOpenPrice": 45000.0,
+      "unrealizedPnl": 250.5,
+      "leverage": 10,
+      "liquidationPrice": 40000.0,
+      "updateTime": "2024-01-01T12:00:00Z",
+      "productType": "USDT-FUTURES",
+      "marginAsset": "USDT"
+    }
+  ],
+  "count": 1
+}
+```
+
+**Examples**:
+```bash
+# Get all futures positions
+curl http://localhost:3001/api/bitget/futures/positions
+
+# Get only non-zero positions
+curl "http://localhost:3001/api/bitget/futures/positions?nonZeroOnly=true"
+
+# Get only USDT futures positions
+curl "http://localhost:3001/api/bitget/futures/positions?includeUsdc=false"
+```
+
+#### 2. Account Valuation
+**Endpoint**: `GET /api/bitget/account/valuation`
+
+Retrieves total account valuation across all account types (spot, p2p, futures, etc.) in USDT equivalent.
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "accountType": "spot",
+      "usdtBalance": 1000.50
+    },
+    {
+      "accountType": "usdt_futures",
+      "usdtBalance": 5000.25
+    },
+    {
+      "accountType": "usdc_futures",
+      "usdtBalance": 2000.75
+    }
+  ],
+  "count": 3
+}
+```
+
+**Example**:
+```bash
+# Get account valuation
+curl http://localhost:3001/api/bitget/account/valuation
+```
+
+**Note**: Both endpoints require read-only API credentials and work in ReadOnly mode.
 
 ### Submodule Management
 
