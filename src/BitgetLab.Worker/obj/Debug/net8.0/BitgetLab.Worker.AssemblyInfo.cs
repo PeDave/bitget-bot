@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("BitgetLab.Worker")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+29f937782aa8c87a14fe3a2fdf6a0dcc17f7cf06")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+0c1d7de5ae44f8740edc208b6e5ded8c1c753da7")]
 [assembly: System.Reflection.AssemblyProductAttribute("BitgetLab.Worker")]
 [assembly: System.Reflection.AssemblyTitleAttribute("BitgetLab.Worker")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

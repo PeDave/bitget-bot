@@ -1,0 +1,22 @@
+[Unit]
+Description=BitgetLab Worker Service
+After=network.target
+
+[Service]
+Type=notify
+User=root
+WorkingDirectory=/root/bitget-bot/src/BitgetLab.Worker
+ExecStart=/usr/bin/dotnet /root/bitget-bot/src/BitgetLab.Worker/bin/Release/net8.0/BitgetLab.Worker.dll
+Restart=on-failure
+RestartSec=10
+KillSignal=SIGINT
+SyslogIdentifier=labot-worker
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=DOTNET_PRINT_TELEMETRY_MESSAGE=false
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

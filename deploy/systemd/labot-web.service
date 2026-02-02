@@ -1,0 +1,21 @@
+[Unit]
+Description=BitgetLab Web Service (Next.js)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/bitget-bot/src/bitgetlab-web
+ExecStart=/usr/bin/npm start
+Restart=on-failure
+RestartSec=10
+SyslogIdentifier=labot-web
+Environment=NODE_ENV=production
+Environment=PORT=3000
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
