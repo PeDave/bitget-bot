@@ -72,6 +72,7 @@ public class AccountBalanceService : IAccountBalanceService
             Total = b.Equity,
             Source = "futures",
             ProductType = "USDT-FUTURES",
+            // Note: Bitget futures API doesn't provide an update timestamp, using current time
             UpdateTime = DateTime.UtcNow
         }));
         
@@ -92,6 +93,7 @@ public class AccountBalanceService : IAccountBalanceService
             Total = b.Equity,
             Source = "futures",
             ProductType = "USDC-FUTURES",
+            // Note: Bitget futures API doesn't provide an update timestamp, using current time
             UpdateTime = DateTime.UtcNow
         }));
         

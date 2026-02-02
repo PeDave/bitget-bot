@@ -184,14 +184,16 @@ public class BitgetController : ControllerBase
             if (nonZeroOnly || minValue.HasValue)
             {
                 var threshold = minValue ?? 0m;
-                balances = balances.Where(b => b.Total > threshold).ToList();
+                balances = balances.Where(b => b.Total > threshold);
             }
+            
+            var balanceList = balances.ToList();
             
             return Ok(new
             {
                 success = true,
-                data = balances.ToList(),
-                count = balances.Count()
+                data = balanceList,
+                count = balanceList.Count
             });
         }
         catch (BitgetApiException ex)
@@ -230,14 +232,16 @@ public class BitgetController : ControllerBase
             if (nonZeroOnly || minValue.HasValue)
             {
                 var threshold = minValue ?? 0m;
-                balances = balances.Where(b => b.Total > threshold).ToList();
+                balances = balances.Where(b => b.Total > threshold);
             }
+            
+            var balanceList = balances.ToList();
             
             return Ok(new
             {
                 success = true,
-                data = balances.ToList(),
-                count = balances.Count()
+                data = balanceList,
+                count = balanceList.Count
             });
         }
         catch (BitgetApiException ex)
