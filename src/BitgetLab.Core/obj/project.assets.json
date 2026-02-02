@@ -1198,7 +1198,7 @@
     ]
   },
   "packageFolders": {
-    "/home/runner/.nuget/packages/": {}
+    "/home/runner/work/bitget-bot/.codeql-scratch/dbs/csharp/working/packages": {}
   },
   "project": {
     "version": "1.0.0",
@@ -1206,7 +1206,7 @@
       "projectUniqueName": "/home/runner/work/bitget-bot/bitget-bot/src/BitgetLab.Core/BitgetLab.Core.csproj",
       "projectName": "BitgetLab.Core",
       "projectPath": "/home/runner/work/bitget-bot/bitget-bot/src/BitgetLab.Core/BitgetLab.Core.csproj",
-      "packagesPath": "/home/runner/.nuget/packages/",
+      "packagesPath": "/home/runner/work/bitget-bot/.codeql-scratch/dbs/csharp/working/packages",
       "outputPath": "/home/runner/work/bitget-bot/bitget-bot/src/BitgetLab.Core/obj/",
       "projectStyle": "PackageReference",
       "configFilePaths": [
@@ -1254,6 +1254,16 @@
         ],
         "assetTargetFallback": true,
         "warn": true,
+        "downloadDependencies": [
+          {
+            "name": "Microsoft.AspNetCore.App.Ref",
+            "version": "[8.0.23, 8.0.23]"
+          },
+          {
+            "name": "Microsoft.NETCore.App.Ref",
+            "version": "[8.0.23, 8.0.23]"
+          }
+        ],
         "frameworkReferences": {
           "Microsoft.NETCore.App": {
             "privateAssets": "all"
