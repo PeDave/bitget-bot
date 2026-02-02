@@ -16,6 +16,16 @@ public interface IAccountBalanceService
     /// Gets futures account balances for specified product types
     /// </summary>
     Task<IEnumerable<BalanceDto>> GetFuturesBalancesAsync(CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Gets futures positions for specified product type
+    /// </summary>
+    Task<IEnumerable<PositionDto>> GetFuturesPositionsAsync(BitgetProductTypeV2 productType, string marginAsset, CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Gets account assets valuation (spot)
+    /// </summary>
+    Task<IEnumerable<AssetValuationDto>> GetAccountValuationAsync(CancellationToken cancellationToken = default);
 }
 
 public class AccountBalanceService : IAccountBalanceService
@@ -99,6 +109,51 @@ public class AccountBalanceService : IAccountBalanceService
         
         return balances;
     }
+
+    public async Task<IEnumerable<PositionDto>> GetFuturesPositionsAsync(BitgetProductTypeV2 productType, string marginAsset, CancellationToken cancellationToken = default)
+    {
+        using var client = _clientFactory.CreateRestClient();
+        
+        var result = await client.FuturesApiV2.Trading.GetPositionsAsync(productType, marginAsset, cancellationToken);
+        
+        if (!result.Success)
+        {
+            throw new BitgetApiException($"Failed to get futures positions: {result.Error?.Message ?? "Unknown error"}");
+        }
+
+        return result.Data.Select(p => new PositionDto
+        {
+            Symbol = p.Symbol,
+            Side = p.PositionSide.ToString(),
+            Total = p.Total,
+            Available = p.Available,
+            Leverage = p.Leverage,
+            AvgOpenPrice = p.AverageOpenPrice,
+            UnrealizedPnl = p.UnrealizedProfitAndLoss,
+            LiquidationPrice = p.LiquidationPrice,
+            UpdateTime = p.UpdateTime,
+            ProductType = productType == BitgetProductTypeV2.UsdtFutures ? "USDT-FUTURES" : "USDC-FUTURES",
+            MarginAsset = marginAsset
+        }).ToList();
+    }
+
+    public async Task<IEnumerable<AssetValuationDto>> GetAccountValuationAsync(CancellationToken cancellationToken = default)
+    {
+        using var client = _clientFactory.CreateRestClient();
+        
+        var result = await client.SpotApiV2.Account.GetAssetsValuationAsync(cancellationToken);
+        
+        if (!result.Success)
+        {
+            throw new BitgetApiException($"Failed to get account valuation: {result.Error?.Message ?? "Unknown error"}");
+        }
+
+        return result.Data.Select(v => new AssetValuationDto
+        {
+            AccountType = v.AccountType,
+            UsdtBalance = v.UsdtBalance
+        }).ToList();
+    }
 }
 
 /// <summary>
@@ -135,4 +190,81 @@ public class BalanceDto
     /// Last update time
     /// </summary>
     public DateTime UpdateTime { get; set; }
+}
+
+/// <summary>
+/// Position data transfer object
+/// </summary>
+public class PositionDto
+{
+    /// <summary>
+    /// Symbol (e.g., BTCUSDT)
+    /// </summary>
+    public string Symbol { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// Position side (e.g., Long, Short)
+    /// </summary>
+    public string Side { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// Total quantity of all positions
+    /// </summary>
+    public decimal Total { get; set; }
+    
+    /// <summary>
+    /// Available quantity for positions
+    /// </summary>
+    public decimal? Available { get; set; }
+    
+    /// <summary>
+    /// Leverage
+    /// </summary>
+    public decimal Leverage { get; set; }
+    
+    /// <summary>
+    /// Average open price
+    /// </summary>
+    public decimal AvgOpenPrice { get; set; }
+    
+    /// <summary>
+    /// Unrealized profit and loss
+    /// </summary>
+    public decimal UnrealizedPnl { get; set; }
+    
+    /// <summary>
+    /// Liquidation price
+    /// </summary>
+    public decimal LiquidationPrice { get; set; }
+    
+    /// <summary>
+    /// Last update time
+    /// </summary>
+    public DateTime UpdateTime { get; set; }
+    
+    /// <summary>
+    /// Product type (e.g., "USDT-FUTURES", "USDC-FUTURES")
+    /// </summary>
+    public string ProductType { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// Margin asset (e.g., USDT, USDC)
+    /// </summary>
+    public string MarginAsset { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Asset valuation data transfer object
+/// </summary>
+public class AssetValuationDto
+{
+    /// <summary>
+    /// Account type
+    /// </summary>
+    public string AccountType { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// USDT balance value
+    /// </summary>
+    public decimal UsdtBalance { get; set; }
 }

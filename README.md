@@ -155,6 +155,21 @@ curl http://localhost:3001/api/bitget/futures/balances
 # Get futures balances with filter (only show non-zero balances)
 curl "http://localhost:3001/api/bitget/futures/balances?nonZeroOnly=true"
 
+# Get futures positions (USDT futures by default)
+curl http://localhost:3001/api/bitget/futures/positions
+
+# Get futures positions with specific product type
+curl "http://localhost:3001/api/bitget/futures/positions?productType=USDT-FUTURES"
+
+# Get futures positions for USDC futures
+curl "http://localhost:3001/api/bitget/futures/positions?productType=USDC-FUTURES&marginAsset=USDC"
+
+# Get futures positions with filter (only show non-zero positions)
+curl "http://localhost:3001/api/bitget/futures/positions?nonZeroOnly=true"
+
+# Get account valuation (spot assets valued in USDT)
+curl http://localhost:3001/api/bitget/account/valuation
+
 # Place order (requires Trade mode, returns 403 in ReadOnly mode)
 curl -X POST http://localhost:3001/api/bitget/orders \
   -H "Content-Type: application/json" \

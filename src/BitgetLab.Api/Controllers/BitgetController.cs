@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using BitgetLab.Core.Services.Bitget;
+using Bitget.Net.Enums;
 
 namespace BitgetLab.Api.Controllers;
 
@@ -257,6 +258,112 @@ public class BitgetController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to get futures balances");
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
+    }
+
+    [HttpGet("futures/positions")]
+    public async Task<IActionResult> GetFuturesPositions(
+        [FromQuery] string? productType = null,
+        [FromQuery] string? marginAsset = null,
+        [FromQuery] bool nonZeroOnly = false,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // Parse and validate productType
+            BitgetProductTypeV2 parsedProductType;
+            if (string.IsNullOrEmpty(productType) || productType.Equals("USDT-FUTURES", StringComparison.OrdinalIgnoreCase))
+            {
+                parsedProductType = BitgetProductTypeV2.UsdtFutures;
+            }
+            else if (productType.Equals("USDC-FUTURES", StringComparison.OrdinalIgnoreCase))
+            {
+                parsedProductType = BitgetProductTypeV2.UsdcFutures;
+            }
+            else
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    error = "Invalid productType. Must be 'USDT-FUTURES' or 'USDC-FUTURES'"
+                });
+            }
+
+            // Set default marginAsset based on productType
+            string effectiveMarginAsset = marginAsset ?? (parsedProductType == BitgetProductTypeV2.UsdtFutures ? "USDT" : "USDC");
+
+            var positions = await _accountBalanceService.GetFuturesPositionsAsync(parsedProductType, effectiveMarginAsset, cancellationToken);
+            
+            // Apply filters
+            if (nonZeroOnly)
+            {
+                positions = positions.Where(p => p.Total != 0);
+            }
+            
+            var positionList = positions.ToList();
+            
+            return Ok(new
+            {
+                success = true,
+                data = positionList,
+                count = positionList.Count
+            });
+        }
+        catch (BitgetApiException ex)
+        {
+            _logger.LogError(ex, "Bitget API error while getting futures positions");
+            return StatusCode(502, new
+            {
+                success = false,
+                error = "Failed to retrieve futures positions from Bitget",
+                message = ex.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get futures positions");
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
+    }
+
+    [HttpGet("account/valuation")]
+    public async Task<IActionResult> GetAccountValuation(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var valuation = await _accountBalanceService.GetAccountValuationAsync(cancellationToken);
+            var valuationList = valuation.ToList();
+            
+            return Ok(new
+            {
+                success = true,
+                data = valuationList
+            });
+        }
+        catch (BitgetApiException ex)
+        {
+            _logger.LogError(ex, "Bitget API error while getting account valuation");
+            return StatusCode(502, new
+            {
+                success = false,
+                error = "Failed to retrieve account valuation from Bitget",
+                message = ex.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get account valuation");
             return StatusCode(500, new
             {
                 success = false,
