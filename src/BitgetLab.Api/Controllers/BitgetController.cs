@@ -30,20 +30,33 @@ public class BitgetController : ControllerBase
         try
         {
             var symbols = await _marketDataService.GetSymbolsAsync(cancellationToken);
+            var symbolsList = symbols.ToList();
+            
             return Ok(new
             {
                 success = true,
-                symbols = symbols.Take(100).ToList(), // Limit to first 100 for performance
-                count = symbols.Count()
+                symbols = symbolsList.Take(100).ToList(), // Limit response size for performance
+                totalCount = symbolsList.Count,
+                displayedCount = Math.Min(100, symbolsList.Count)
+            });
+        }
+        catch (BitgetApiException ex)
+        {
+            _logger.LogError(ex, "Bitget API error while getting symbols");
+            return StatusCode(502, new
+            {
+                success = false,
+                error = "Failed to retrieve symbols from Bitget",
+                message = ex.Message
             });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to get symbols");
-            return StatusCode(502, new
+            return StatusCode(500, new
             {
                 success = false,
-                error = "Failed to retrieve symbols from Bitget",
+                error = "Internal server error",
                 message = ex.Message
             });
         }
@@ -70,13 +83,23 @@ public class BitgetController : ControllerBase
                 data = ticker
             });
         }
-        catch (Exception ex)
+        catch (BitgetApiException ex)
         {
-            _logger.LogError(ex, "Failed to get ticker for {Symbol}", symbol);
+            _logger.LogError(ex, "Bitget API error while getting ticker for {Symbol}", symbol);
             return StatusCode(502, new
             {
                 success = false,
                 error = $"Failed to retrieve ticker for {symbol} from Bitget",
+                message = ex.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get ticker for {Symbol}", symbol);
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
                 message = ex.Message
             });
         }
@@ -122,13 +145,23 @@ public class BitgetController : ControllerBase
                 error = ex.Message
             });
         }
+        catch (BitgetApiException ex)
+        {
+            _logger.LogError(ex, "Bitget API error while placing order for {Symbol}", orderRequest.Symbol);
+            return StatusCode(502, new
+            {
+                success = false,
+                error = "Failed to place order on Bitget",
+                message = ex.Message
+            });
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to place order for {Symbol}", orderRequest.Symbol);
             return StatusCode(500, new
             {
                 success = false,
-                error = "Failed to place order",
+                error = "Internal server error",
                 message = ex.Message
             });
         }

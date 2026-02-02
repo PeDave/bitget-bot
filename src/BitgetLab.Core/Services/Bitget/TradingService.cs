@@ -43,7 +43,7 @@ public class TradingService : ITradingService
 
         if (!result.Success)
         {
-            throw new Exception($"Failed to place order: {result.Error?.Message ?? "Unknown error"}");
+            throw new BitgetApiException($"Failed to place order: {result.Error?.Message ?? "Unknown error"}");
         }
 
         return new OrderResult

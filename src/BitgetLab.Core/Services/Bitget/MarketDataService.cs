@@ -34,7 +34,7 @@ public class MarketDataService : IMarketDataService
         
         if (!result.Success)
         {
-            throw new Exception($"Failed to get symbols: {result.Error?.Message ?? "Unknown error"}");
+            throw new BitgetApiException($"Failed to get symbols: {result.Error?.Message ?? "Unknown error"}");
         }
 
         return result.Data.Select(s => s.Symbol).ToList();
@@ -49,13 +49,13 @@ public class MarketDataService : IMarketDataService
         
         if (!result.Success)
         {
-            throw new Exception($"Failed to get ticker for {symbol}: {result.Error?.Message ?? "Unknown error"}");
+            throw new BitgetApiException($"Failed to get ticker for {symbol}: {result.Error?.Message ?? "Unknown error"}");
         }
 
         var ticker = result.Data.FirstOrDefault();
         if (ticker == null)
         {
-            throw new Exception($"No ticker data found for {symbol}");
+            throw new BitgetApiException($"No ticker data found for {symbol}");
         }
 
         return new TickerData
