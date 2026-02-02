@@ -2,7 +2,6 @@ using Bitget.Net.Enums;
 using Bitget.Net.Enums.V2;
 using Bitget.Net.Interfaces.Clients;
 using BitgetLab.Core.Models;
-using System.Collections.Concurrent;
 
 namespace BitgetLab.Core.Services.Bitget;
 
@@ -99,41 +98,33 @@ public class OpenOrderService : IOpenOrderService
         int? limit = null,
         CancellationToken cancellationToken = default)
     {
-        using var client = _clientFactory.CreateRestClient();
-        
-        var orders = new ConcurrentBag<OpenOrderDto>();
-        var tasks = new List<Task>();
+        var tasks = new List<Task<IEnumerable<OpenOrderDto>>>();
 
         // Query USDT Futures in parallel
         if (includeUsdt)
         {
-            var usdtTask = GetUsdtFuturesOrdersAsync(
-                client, symbol, status, limit, orders, cancellationToken);
-            tasks.Add(usdtTask);
+            tasks.Add(GetUsdtFuturesOrdersAsync(symbol, status, limit, cancellationToken));
         }
         
         // Query USDC Futures in parallel
         if (includeUsdc)
         {
-            var usdcTask = GetUsdcFuturesOrdersAsync(
-                client, symbol, status, limit, orders, cancellationToken);
-            tasks.Add(usdcTask);
+            tasks.Add(GetUsdcFuturesOrdersAsync(symbol, status, limit, cancellationToken));
         }
         
-        // Wait for all tasks to complete
-        await Task.WhenAll(tasks);
-        
-        return orders;
+        // Wait for all tasks to complete and flatten results
+        var results = await Task.WhenAll(tasks);
+        return results.SelectMany(r => r).ToList();
     }
 
-    private async Task GetUsdtFuturesOrdersAsync(
-        IBitgetRestClient client,
+    private async Task<IEnumerable<OpenOrderDto>> GetUsdtFuturesOrdersAsync(
         string? symbol,
         OrderStatus? status,
         int? limit,
-        ConcurrentBag<OpenOrderDto> orders,
         CancellationToken cancellationToken)
     {
+        using var client = _clientFactory.CreateRestClient();
+        
         var result = await client.FuturesApiV2.Trading.GetOpenOrdersAsync(
             BitgetProductTypeV2.UsdtFutures,
             symbol: symbol,
@@ -146,36 +137,33 @@ public class OpenOrderService : IOpenOrderService
             throw new BitgetApiException($"Failed to get USDT futures open orders: {result.Error?.Message ?? "Unknown error"}");
         }
 
-        foreach (var o in result.Data.Orders)
+        return result.Data.Orders.Select(o => new OpenOrderDto
         {
-            orders.Add(new OpenOrderDto
-            {
-                OrderId = o.OrderId,
-                ClientOrderId = o.ClientOrderId,
-                Symbol = o.Symbol,
-                Side = o.Side.ToString(),
-                Type = o.OrderType.ToString(),
-                Status = o.Status.ToString(),
-                Price = o.Price,
-                Quantity = o.Quantity,
-                QuantityFilled = o.QuantityFilled,
-                CreateTime = o.CreateTime,
-                UpdateTime = o.UpdateTime ?? o.CreateTime,
-                Source = "futures",
-                ProductType = "USDT-FUTURES",
-                MarginAsset = "USDT"
-            });
-        }
+            OrderId = o.OrderId,
+            ClientOrderId = o.ClientOrderId,
+            Symbol = o.Symbol,
+            Side = o.Side.ToString(),
+            Type = o.OrderType.ToString(),
+            Status = o.Status.ToString(),
+            Price = o.Price,
+            Quantity = o.Quantity,
+            QuantityFilled = o.QuantityFilled,
+            CreateTime = o.CreateTime,
+            UpdateTime = o.UpdateTime ?? o.CreateTime,
+            Source = "futures",
+            ProductType = "USDT-FUTURES",
+            MarginAsset = "USDT"
+        }).ToList();
     }
 
-    private async Task GetUsdcFuturesOrdersAsync(
-        IBitgetRestClient client,
+    private async Task<IEnumerable<OpenOrderDto>> GetUsdcFuturesOrdersAsync(
         string? symbol,
         OrderStatus? status,
         int? limit,
-        ConcurrentBag<OpenOrderDto> orders,
         CancellationToken cancellationToken)
     {
+        using var client = _clientFactory.CreateRestClient();
+        
         var result = await client.FuturesApiV2.Trading.GetOpenOrdersAsync(
             BitgetProductTypeV2.UsdcFutures,
             symbol: symbol,
@@ -188,25 +176,22 @@ public class OpenOrderService : IOpenOrderService
             throw new BitgetApiException($"Failed to get USDC futures open orders: {result.Error?.Message ?? "Unknown error"}");
         }
 
-        foreach (var o in result.Data.Orders)
+        return result.Data.Orders.Select(o => new OpenOrderDto
         {
-            orders.Add(new OpenOrderDto
-            {
-                OrderId = o.OrderId,
-                ClientOrderId = o.ClientOrderId,
-                Symbol = o.Symbol,
-                Side = o.Side.ToString(),
-                Type = o.OrderType.ToString(),
-                Status = o.Status.ToString(),
-                Price = o.Price,
-                Quantity = o.Quantity,
-                QuantityFilled = o.QuantityFilled,
-                CreateTime = o.CreateTime,
-                UpdateTime = o.UpdateTime ?? o.CreateTime,
-                Source = "futures",
-                ProductType = "USDC-FUTURES",
-                MarginAsset = "USDC"
-            });
-        }
+            OrderId = o.OrderId,
+            ClientOrderId = o.ClientOrderId,
+            Symbol = o.Symbol,
+            Side = o.Side.ToString(),
+            Type = o.OrderType.ToString(),
+            Status = o.Status.ToString(),
+            Price = o.Price,
+            Quantity = o.Quantity,
+            QuantityFilled = o.QuantityFilled,
+            CreateTime = o.CreateTime,
+            UpdateTime = o.UpdateTime ?? o.CreateTime,
+            Source = "futures",
+            ProductType = "USDC-FUTURES",
+            MarginAsset = "USDC"
+        }).ToList();
     }
 }

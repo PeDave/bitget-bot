@@ -430,10 +430,11 @@ public class BitgetController : ControllerBase
                 }
                 else
                 {
+                    var validValues = string.Join(", ", Enum.GetNames(typeof(Bitget.Net.Enums.V2.OrderStatus)));
                     return BadRequest(new
                     {
                         success = false,
-                        error = $"Invalid status value: {status}. Valid values are: Live, PartiallyFilled, Filled, Cancelled"
+                        error = $"Invalid status value: {status}. Valid values are: {validValues}"
                     });
                 }
             }
