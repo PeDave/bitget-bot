@@ -276,13 +276,16 @@ public class BitgetController : ControllerBase
     {
         try
         {
+            // Set default productType if not provided
+            string effectiveProductType = string.IsNullOrEmpty(productType) ? "USDT-FUTURES" : productType;
+            
             // Parse and validate productType
             BitgetProductTypeV2 parsedProductType;
-            if (string.IsNullOrEmpty(productType) || productType.Equals("USDT-FUTURES", StringComparison.OrdinalIgnoreCase))
+            if (effectiveProductType.Equals("USDT-FUTURES", StringComparison.OrdinalIgnoreCase))
             {
                 parsedProductType = BitgetProductTypeV2.UsdtFutures;
             }
-            else if (productType.Equals("USDC-FUTURES", StringComparison.OrdinalIgnoreCase))
+            else if (effectiveProductType.Equals("USDC-FUTURES", StringComparison.OrdinalIgnoreCase))
             {
                 parsedProductType = BitgetProductTypeV2.UsdcFutures;
             }

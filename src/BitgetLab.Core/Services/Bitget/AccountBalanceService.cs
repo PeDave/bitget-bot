@@ -132,7 +132,12 @@ public class AccountBalanceService : IAccountBalanceService
             UnrealizedPnl = p.UnrealizedProfitAndLoss,
             LiquidationPrice = p.LiquidationPrice,
             UpdateTime = p.UpdateTime,
-            ProductType = productType == BitgetProductTypeV2.UsdtFutures ? "USDT-FUTURES" : "USDC-FUTURES",
+            ProductType = productType switch
+            {
+                BitgetProductTypeV2.UsdtFutures => "USDT-FUTURES",
+                BitgetProductTypeV2.UsdcFutures => "USDC-FUTURES",
+                _ => throw new ArgumentException($"Unsupported product type: {productType}", nameof(productType))
+            },
             MarginAsset = marginAsset
         }).ToList();
     }
