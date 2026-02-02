@@ -69,6 +69,8 @@ systemctl start caddy
 
 ## 5. Clone and Build BitgetLab
 
+> **⚠️ Important:** Clone the repository directly to `/root/bitget-bot`. Do NOT create nested copies like `/root/bitget-bot/bitget-bot/` which will confuse build tools and systemd service paths. The canonical source must be under `src/` at the repository root.
+
 ```bash
 # Clone repository to /root
 cd /root
@@ -76,7 +78,14 @@ git clone https://github.com/PeDave/bitget-bot.git
 cd bitget-bot
 
 # Build .NET projects
-dotnet build -c Release
+# Option 1: Use the build script (recommended)
+./build.sh
+
+# Option 2: Use dotnet CLI directly
+# dotnet build -c Release
+
+# Or build using specific solution file
+# dotnet build BitgetLab.sln -c Release
 
 # Build Next.js web app
 cd src/bitgetlab-web
@@ -326,7 +335,10 @@ cd /root/bitget-bot
 git pull
 
 # Rebuild .NET projects
-dotnet build -c Release
+./build.sh
+
+# Or use dotnet CLI directly
+# dotnet build -c Release
 
 # Rebuild Next.js
 cd src/bitgetlab-web
