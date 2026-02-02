@@ -200,7 +200,9 @@ bitget-bot/
 │   └── runbook/                # Deployment guide
 ├── vendor/                     # Ready for Bitget.Net
 ├── .gitignore                  # Excludes build artifacts
-├── BitgetLab.sln              # Solution file
+├── build.sh                    # Build script
+├── BitgetLab.sln              # Classic solution file
+├── BitgetLab.slnx             # Visual Studio XML solution file
 └── README.md                   # Main documentation
 ```
 

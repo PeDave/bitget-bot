@@ -50,6 +50,8 @@ BitgetLab is an advanced cryptocurrency trading bot system integrated with the B
 
 ### Development Setup
 
+> **⚠️ Important:** Always clone the repository to a clean directory. Avoid creating nested copies like `bitget-bot/bitget-bot/` which can confuse build tools and deployment scripts. The canonical source should always be under `src/` at the repository root.
+
 1. **Clone the repository**
 
 ```bash
@@ -60,12 +62,19 @@ cd bitget-bot
 2. **Build .NET projects**
 
 ```bash
-# Restore and build all projects
+# Option 1: Use the build script (recommended)
+./build.sh          # Builds in Release mode by default
+./build.sh Debug    # Or build in Debug mode
+
+# Option 2: Use dotnet CLI directly
 dotnet restore
 dotnet build
 
 # Or build in Release mode
 dotnet build -c Release
+
+# Or build specific solution file
+dotnet build BitgetLab.sln -c Release
 ```
 
 3. **Run the API**
@@ -171,7 +180,9 @@ bitget-bot/
 ├── vendor/                      # Vendored dependencies
 │   └── BITGET_INTEGRATION.md    # Integration guide
 │
-└── BitgetLab.sln               # Solution file
+├── build.sh                     # Build script (alternative to dotnet build)
+├── BitgetLab.sln               # Classic solution file
+└── BitgetLab.slnx              # Visual Studio XML solution file
 ```
 
 ## ⚙️ Configuration
@@ -216,8 +227,13 @@ NEXT_PUBLIC_API_URL=http://localhost:3001
 ### .NET Projects
 
 ```bash
-# Build all projects
+# Build all projects (using build script - recommended)
+./build.sh          # Release mode
+./build.sh Debug    # Debug mode
+
+# Build using dotnet CLI
 dotnet build
+dotnet build BitgetLab.sln
 
 # Build in Release mode
 dotnet build -c Release
