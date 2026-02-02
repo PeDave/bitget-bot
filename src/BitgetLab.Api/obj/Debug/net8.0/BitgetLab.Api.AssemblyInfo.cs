@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("BitgetLab.Api")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+0c1d7de5ae44f8740edc208b6e5ded8c1c753da7")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+e3c597cb9a443a7aa56ba59e4327ecc05347d393")]
 [assembly: System.Reflection.AssemblyProductAttribute("BitgetLab.Api")]
 [assembly: System.Reflection.AssemblyTitleAttribute("BitgetLab.Api")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
