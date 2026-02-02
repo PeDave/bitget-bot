@@ -1,5 +1,6 @@
 using BitgetLab.Api.Services;
 using BitgetLab.Core.Options;
+using BitgetLab.Core.Services.Bitget;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -10,6 +11,11 @@ builder.Services.AddEndpointsApiExplorer();
 // Configure Bitget options
 builder.Services.Configure<BitgetOptions>(
     builder.Configuration.GetSection(BitgetOptions.SectionName));
+
+// Register Bitget services
+builder.Services.AddSingleton<IBitgetClientFactory, BitgetClientFactory>();
+builder.Services.AddSingleton<IMarketDataService, MarketDataService>();
+builder.Services.AddSingleton<ITradingService, TradingService>();
 
 // Register services
 builder.Services.AddSingleton<ISystemMetricsService, SystemMetricsService>();

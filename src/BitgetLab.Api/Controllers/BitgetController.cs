@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using BitgetLab.Core.Services.Bitget;
+using BitgetLab.Core.Models;
 
 namespace BitgetLab.Api.Controllers;
 
@@ -6,40 +8,83 @@ namespace BitgetLab.Api.Controllers;
 [Route("api/bitget")]
 public class BitgetController : ControllerBase
 {
-    // TODO: Inject MarketDataService and TradingService when Bitget.Net is vendored
+    private readonly IMarketDataService _marketDataService;
+    private readonly ITradingService _tradingService;
+    private readonly ILogger<BitgetController> _logger;
+    
+    public BitgetController(
+        IMarketDataService marketDataService,
+        ITradingService tradingService,
+        ILogger<BitgetController> logger)
+    {
+        _marketDataService = marketDataService;
+        _tradingService = tradingService;
+        _logger = logger;
+    }
     
     [HttpGet("symbols")]
-    public IActionResult GetSymbols()
+    public async Task<IActionResult> GetSymbols(CancellationToken cancellationToken)
     {
-        // TODO: Implement with Bitget.Net SDK
-        return Ok(new
+        try
         {
-            message = "TODO: Implement with Bitget.Net SDK",
-            symbols = new[] { "BTCUSDT", "ETHUSDT" }
-        });
+            var symbols = await _marketDataService.GetSymbolsAsync(cancellationToken);
+            return Ok(new { symbols = symbols.ToList() });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting symbols");
+            return StatusCode(500, new { error = ex.Message });
+        }
     }
 
     [HttpGet("market/ticker")]
-    public IActionResult GetTicker([FromQuery] string symbol)
+    public async Task<IActionResult> GetTicker([FromQuery] string symbol, CancellationToken cancellationToken)
     {
-        // TODO: Implement with Bitget.Net SDK
-        return Ok(new
+        if (string.IsNullOrWhiteSpace(symbol))
         {
-            message = "TODO: Implement with Bitget.Net SDK",
-            symbol,
-            price = 0.0,
-            timestamp = DateTime.UtcNow
-        });
+            return BadRequest(new { error = "Symbol parameter is required" });
+        }
+
+        try
+        {
+            var ticker = await _marketDataService.GetTickerAsync(symbol, cancellationToken);
+            return Ok(ticker);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting ticker for {Symbol}", symbol);
+            return StatusCode(500, new { error = ex.Message });
+        }
     }
 
     [HttpPost("orders")]
-    public IActionResult PlaceOrder([FromBody] object orderRequest)
+    public async Task<IActionResult> PlaceOrder([FromBody] OrderRequest orderRequest, CancellationToken cancellationToken)
     {
-        // TODO: Implement with Bitget.Net SDK
-        return Ok(new
+        if (orderRequest == null)
         {
-            message = "TODO: Implement with Bitget.Net SDK - check mode (ReadOnly/Trade)",
-            orderId = "stub-order-123"
-        });
+            return BadRequest(new { error = "Order request is required" });
+        }
+
+        try
+        {
+            var result = await _tradingService.PlaceOrderAsync(orderRequest, cancellationToken);
+            
+            if (result.Status == "Failed")
+            {
+                return BadRequest(new { error = result.ErrorMessage ?? "Order placement failed" });
+            }
+            
+            return Ok(result);
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("ReadOnly mode"))
+        {
+            // Return 403 Forbidden for ReadOnly mode violation
+            return StatusCode(403, new { error = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error placing order");
+            return StatusCode(500, new { error = ex.Message });
+        }
     }
 }

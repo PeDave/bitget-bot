@@ -6,4 +6,9 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Bitget.Net SDK from vendor directory -->
+    <ProjectReference Include="..\..\vendor\Bitget.Net\Bitget.Net\Bitget.Net.csproj" />
+  </ItemGroup>
+
 </Project>
