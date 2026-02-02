@@ -9,17 +9,20 @@ public class BitgetController : ControllerBase
 {
     private readonly IMarketDataService _marketDataService;
     private readonly ITradingService _tradingService;
+    private readonly IAccountBalanceService _accountBalanceService;
     private readonly IBitgetClientFactory _clientFactory;
     private readonly ILogger<BitgetController> _logger;
 
     public BitgetController(
         IMarketDataService marketDataService,
         ITradingService tradingService,
+        IAccountBalanceService accountBalanceService,
         IBitgetClientFactory clientFactory,
         ILogger<BitgetController> logger)
     {
         _marketDataService = marketDataService;
         _tradingService = tradingService;
+        _accountBalanceService = accountBalanceService;
         _clientFactory = clientFactory;
         _logger = logger;
     }
@@ -158,6 +161,102 @@ public class BitgetController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to place order for {Symbol}", orderRequest.Symbol);
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
+    }
+
+    [HttpGet("spot/balances")]
+    public async Task<IActionResult> GetSpotBalances(
+        [FromQuery] decimal? minValue = null,
+        [FromQuery] bool nonZeroOnly = false,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var balances = await _accountBalanceService.GetSpotBalancesAsync(cancellationToken);
+            
+            // Apply filters
+            if (nonZeroOnly || minValue.HasValue)
+            {
+                var threshold = minValue ?? 0m;
+                balances = balances.Where(b => b.Total > threshold);
+            }
+            
+            var balanceList = balances.ToList();
+            
+            return Ok(new
+            {
+                success = true,
+                data = balanceList,
+                count = balanceList.Count
+            });
+        }
+        catch (BitgetApiException ex)
+        {
+            _logger.LogError(ex, "Bitget API error while getting spot balances");
+            return StatusCode(502, new
+            {
+                success = false,
+                error = "Failed to retrieve spot balances from Bitget",
+                message = ex.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get spot balances");
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
+    }
+
+    [HttpGet("futures/balances")]
+    public async Task<IActionResult> GetFuturesBalances(
+        [FromQuery] decimal? minValue = null,
+        [FromQuery] bool nonZeroOnly = false,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var balances = await _accountBalanceService.GetFuturesBalancesAsync(cancellationToken);
+            
+            // Apply filters
+            if (nonZeroOnly || minValue.HasValue)
+            {
+                var threshold = minValue ?? 0m;
+                balances = balances.Where(b => b.Total > threshold);
+            }
+            
+            var balanceList = balances.ToList();
+            
+            return Ok(new
+            {
+                success = true,
+                data = balanceList,
+                count = balanceList.Count
+            });
+        }
+        catch (BitgetApiException ex)
+        {
+            _logger.LogError(ex, "Bitget API error while getting futures balances");
+            return StatusCode(502, new
+            {
+                success = false,
+                error = "Failed to retrieve futures balances from Bitget",
+                message = ex.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get futures balances");
             return StatusCode(500, new
             {
                 success = false,
