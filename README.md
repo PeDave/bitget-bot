@@ -47,17 +47,23 @@ BitgetLab is an advanced cryptocurrency trading bot system integrated with the B
 - .NET 8 SDK
 - Node.js 20+
 - npm or yarn
+- Git (for submodule management)
 
 ### Development Setup
 
 > **⚠️ Important:** Always clone the repository to a clean directory. Avoid creating nested copies like `bitget-bot/bitget-bot/` which can confuse build tools and deployment scripts. The canonical source should always be under `src/` at the repository root.
 
-1. **Clone the repository**
+1. **Clone the repository with submodules**
 
 ```bash
-git clone https://github.com/PeDave/bitget-bot.git
+git clone --recursive https://github.com/PeDave/bitget-bot.git
 cd bitget-bot
+
+# If you already cloned without --recursive, initialize submodules:
+git submodule update --init --recursive
 ```
+
+> **Note:** The Bitget.Net SDK is included as a git submodule in `vendor/Bitget.Net`. The `--recursive` flag ensures it's downloaded during clone. For existing clones, use `git submodule update --init --recursive`.
 
 2. **Build .NET projects**
 
@@ -67,13 +73,10 @@ cd bitget-bot
 ./build.sh Debug    # Or build in Debug mode
 
 # Option 2: Use dotnet CLI directly
-dotnet restore
-dotnet build
+dotnet restore BitgetLab.sln
+dotnet build BitgetLab.sln
 
 # Or build in Release mode
-dotnet build -c Release
-
-# Or build specific solution file
 dotnet build BitgetLab.sln -c Release
 ```
 
@@ -125,9 +128,14 @@ curl http://localhost:3001/api/system/metrics
 # Service status
 curl http://localhost:3001/api/system/services
 
-# Bitget endpoints (stubs until vendor SDK is integrated)
+# Bitget endpoints (require Bitget API credentials in appsettings.json)
 curl http://localhost:3001/api/bitget/symbols
 curl "http://localhost:3001/api/bitget/market/ticker?symbol=BTCUSDT"
+
+# Place order (requires Mode=Trade in configuration)
+curl -X POST http://localhost:3001/api/bitget/orders \
+  -H "Content-Type: application/json" \
+  -d '{"symbol":"BTCUSDT","side":"buy","quantity":0.001,"price":45000}'
 ```
 
 ## 📦 Project Structure
@@ -321,21 +329,61 @@ journalctl -u labot-web -f
 2. **Service won't start**: Check logs with `journalctl -u <service> -n 100`
 3. **Build errors**: Ensure correct .NET SDK version: `dotnet --version`
 4. **Clerk errors**: Verify API keys in `.env.local`
+5. **Submodule not initialized**: Run `git submodule update --init --recursive`
+6. **Bitget API errors**: Verify your API credentials in `appsettings.json`
 
 ## 📝 Bitget.Net Integration
 
-The Bitget SDK integration is planned but not yet implemented. See [vendor/BITGET_INTEGRATION.md](vendor/BITGET_INTEGRATION.md) for the complete integration plan.
+The Bitget.Net SDK is integrated as a git submodule and provides full access to Bitget's trading platform. See [vendor/BITGET_INTEGRATION.md](vendor/BITGET_INTEGRATION.md) for detailed integration documentation.
 
-### To Add Bitget.Net:
+### Submodule Management
+
+The Bitget.Net SDK is managed as a git submodule:
 
 ```bash
-# Add as git submodule
-git submodule add https://github.com/JKorf/Bitget.Net.git vendor/Bitget.Net
+# Initialize submodules (if not already done)
 git submodule update --init --recursive
 
-# Add project reference in BitgetLab.Core.csproj
-# See BITGET_INTEGRATION.md for details
+# Update to latest version
+cd vendor/Bitget.Net
+git checkout main
+git pull
+cd ../..
+git add vendor/Bitget.Net
+git commit -m "Update Bitget.Net to latest version"
+
+# Clone repository with submodules
+git clone --recursive https://github.com/PeDave/bitget-bot.git
 ```
+
+### Configuration
+
+Configure Bitget API access in `src/BitgetLab.Api/appsettings.json` or via environment variables:
+
+```json
+{
+  "Bitget": {
+    "Mode": "ReadOnly",  // or "Trade" for live trading
+    "ReadOnly": {
+      "ApiKey": "your_readonly_api_key",
+      "ApiSecret": "your_readonly_api_secret",
+      "Passphrase": "your_readonly_passphrase"
+    },
+    "Trade": {
+      "ApiKey": "your_trade_api_key",
+      "ApiSecret": "your_trade_api_secret",
+      "Passphrase": "your_trade_passphrase"
+    }
+  }
+}
+```
+
+**Security Notes:**
+- Start with `ReadOnly` mode for safe testing
+- Use separate API keys for ReadOnly and Trade modes
+- Enable IP whitelisting on Bitget for your deployment
+- Never commit API credentials to git
+- Trading endpoints only work when `Mode=Trade`
 
 ## 🤝 Contributing
 
