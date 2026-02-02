@@ -140,6 +140,21 @@ curl http://localhost:3001/api/bitget/symbols
 # Get ticker data for a specific symbol
 curl "http://localhost:3001/api/bitget/market/ticker?symbol=BTCUSDT"
 
+# Get spot account balances
+curl http://localhost:3001/api/bitget/spot/balances
+
+# Get spot balances with filter (only show non-zero balances)
+curl "http://localhost:3001/api/bitget/spot/balances?nonZeroOnly=true"
+
+# Get spot balances with minimum value filter
+curl "http://localhost:3001/api/bitget/spot/balances?minValue=10"
+
+# Get futures account balances (USDT and USDC futures)
+curl http://localhost:3001/api/bitget/futures/balances
+
+# Get futures balances with filter (only show non-zero balances)
+curl "http://localhost:3001/api/bitget/futures/balances?nonZeroOnly=true"
+
 # Place order (requires Trade mode, returns 403 in ReadOnly mode)
 curl -X POST http://localhost:3001/api/bitget/orders \
   -H "Content-Type: application/json" \
