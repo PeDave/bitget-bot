@@ -173,6 +173,42 @@ curl "http://localhost:3001/api/bitget/futures/positions?usdtMarginAsset=USDT&us
 # Get account valuation (total balance across all account types)
 curl http://localhost:3001/api/bitget/account/valuation
 
+# Get spot open orders
+curl http://localhost:3001/api/bitget/spot/orders/open
+
+# Get spot open orders for specific symbol
+curl "http://localhost:3001/api/bitget/spot/orders/open?symbol=BTCUSDT"
+
+# Get spot open orders with limit
+curl "http://localhost:3001/api/bitget/spot/orders/open?limit=10"
+
+# Get futures open orders (USDT and USDC futures)
+curl http://localhost:3001/api/bitget/futures/orders/open
+
+# Get futures open orders for specific symbol
+curl "http://localhost:3001/api/bitget/futures/orders/open?symbol=BTCUSDT"
+
+# Get only USDT futures open orders
+curl "http://localhost:3001/api/bitget/futures/orders/open?includeUsdc=false"
+
+# Get only USDC futures open orders
+curl "http://localhost:3001/api/bitget/futures/orders/open?includeUsdt=false"
+
+# Get futures open orders with limit
+curl "http://localhost:3001/api/bitget/futures/orders/open?limit=20"
+
+# Get copy trading current orders (USDT futures)
+curl http://localhost:3001/api/bitget/copytrading/current-orders
+
+# Get copy trading current orders for specific product type
+curl "http://localhost:3001/api/bitget/copytrading/current-orders?productType=USDT-FUTURES"
+
+# Get copy trading current orders for specific trader
+curl "http://localhost:3001/api/bitget/copytrading/current-orders?traderId=123456"
+
+# Get copy trading current orders with custom limit
+curl "http://localhost:3001/api/bitget/copytrading/current-orders?limit=50"
+
 # Place order (requires Trade mode, returns 403 in ReadOnly mode)
 curl -X POST http://localhost:3001/api/bitget/orders \
   -H "Content-Type: application/json" \
@@ -382,6 +418,9 @@ The Bitget SDK has been successfully integrated using git submodules. The integr
 - **Account Balance API**: Get spot and futures account balances
 - **Futures Position API**: Get open positions in USDT and USDC futures
 - **Account Valuation API**: Get total account valuation across all account types
+- **Spot Orders API**: Get current open spot orders
+- **Futures Orders API**: Get current open futures orders for USDT and USDC markets
+- **Copy Trading API**: Get current copy trading orders from followed traders
 - **Mode-based Security**: ReadOnly mode prevents accidental trades
 
 ### Available Endpoints
@@ -466,7 +505,165 @@ Retrieves total account valuation across all account types (spot, p2p, futures, 
 curl http://localhost:3001/api/bitget/account/valuation
 ```
 
-**Note**: Both endpoints require read-only API credentials and work in ReadOnly mode.
+#### 3. Spot Open Orders
+**Endpoint**: `GET /api/bitget/spot/orders/open`
+
+Retrieves current open spot orders.
+
+**Query Parameters**:
+- `symbol` (string, optional) - Filter by symbol (e.g., BTCUSDT)
+- `limit` (int, optional) - Maximum number of results
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "orderId": "123456789",
+      "clientOrderId": "myorder1",
+      "symbol": "BTCUSDT",
+      "side": "Buy",
+      "orderType": "Limit",
+      "price": 50000.0,
+      "quantity": 0.001,
+      "quantityFilled": 0.0005,
+      "status": "PartiallyFilled",
+      "createTime": "2024-01-01T12:00:00Z",
+      "updateTime": "2024-01-01T12:05:00Z"
+    }
+  ],
+  "count": 1
+}
+```
+
+**Examples**:
+```bash
+# Get all spot open orders
+curl http://localhost:3001/api/bitget/spot/orders/open
+
+# Get spot open orders for specific symbol
+curl "http://localhost:3001/api/bitget/spot/orders/open?symbol=BTCUSDT"
+
+# Get spot open orders with limit
+curl "http://localhost:3001/api/bitget/spot/orders/open?limit=10"
+```
+
+#### 4. Futures Open Orders
+**Endpoint**: `GET /api/bitget/futures/orders/open`
+
+Retrieves current open futures orders for USDT and/or USDC futures markets.
+
+**Query Parameters**:
+- `productType` (string, optional) - Product type (default: USDT-FUTURES)
+- `symbol` (string, optional) - Filter by symbol (e.g., BTCUSDT)
+- `includeUsdt` (bool, default: true) - Include USDT futures orders
+- `includeUsdc` (bool, default: true) - Include USDC futures orders
+- `marginAsset` (string, optional) - Override margin asset
+- `limit` (int, optional) - Maximum number of results
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "orderId": "987654321",
+      "clientOrderId": "myfuture1",
+      "symbol": "BTCUSDT",
+      "side": "Buy",
+      "orderType": "Limit",
+      "price": 50000.0,
+      "quantity": 0.1,
+      "quantityFilled": 0.05,
+      "status": "PartiallyFilled",
+      "productType": "USDT-FUTURES",
+      "marginAsset": "USDT",
+      "createTime": "2024-01-01T12:00:00Z",
+      "updateTime": "2024-01-01T12:05:00Z"
+    }
+  ],
+  "count": 1
+}
+```
+
+**Examples**:
+```bash
+# Get all futures open orders (USDT and USDC)
+curl http://localhost:3001/api/bitget/futures/orders/open
+
+# Get futures open orders for specific symbol
+curl "http://localhost:3001/api/bitget/futures/orders/open?symbol=BTCUSDT"
+
+# Get only USDT futures open orders
+curl "http://localhost:3001/api/bitget/futures/orders/open?includeUsdc=false"
+
+# Get only USDC futures open orders
+curl "http://localhost:3001/api/bitget/futures/orders/open?includeUsdt=false"
+```
+
+#### 5. Copy Trading Current Orders
+**Endpoint**: `GET /api/bitget/copytrading/current-orders`
+
+Retrieves current copy trading orders from followed traders.
+
+**Query Parameters**:
+- `productType` (string, optional) - Product type (default: USDT-FUTURES, options: USDT-FUTURES, USDC-FUTURES)
+- `symbol` (string, optional) - Filter by symbol
+- `traderId` (string, optional) - Filter by specific trader ID
+- `limit` (int, default: 20, max: 50) - Maximum number of results
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "orderId": "ct123456",
+      "symbol": "BTCUSDT",
+      "traderId": "trader123",
+      "traderName": "ProTrader",
+      "side": "Long",
+      "orderType": "Market",
+      "quantity": 0.5,
+      "price": 50000.0,
+      "productType": "USDT-FUTURES",
+      "createTime": "2024-01-01T12:00:00Z"
+    }
+  ],
+  "count": 1
+}
+```
+
+**Examples**:
+```bash
+# Get all copy trading current orders
+curl http://localhost:3001/api/bitget/copytrading/current-orders
+
+# Get copy trading orders for specific product type
+curl "http://localhost:3001/api/bitget/copytrading/current-orders?productType=USDT-FUTURES"
+
+# Get copy trading orders for specific trader
+curl "http://localhost:3001/api/bitget/copytrading/current-orders?traderId=123456"
+
+# Get copy trading orders with custom limit
+curl "http://localhost:3001/api/bitget/copytrading/current-orders?limit=50"
+```
+
+**Note**: All endpoints require read-only API credentials and work in ReadOnly mode.
+
+### Earn/Bots/Grid API Status
+
+The Bitget API provides account valuation data for various account types including `earn` and `bots` through the `/api/bitget/account/valuation` endpoint. However, dedicated operational APIs for Earn products, Grid bots, and other automated trading bots are not currently available in the Bitget.Net SDK.
+
+**Current Support**:
+- ✅ **Account Valuation**: Read account balances for earn and bots account types
+- ✅ **Copy Trading**: Full support for reading current copy trading orders
+- ❌ **Earn Operations**: No API for creating/managing earn products (staking, savings, etc.)
+- ❌ **Grid Bot Operations**: No API for creating/managing grid trading bots
+- ❌ **Smart Bot Operations**: No API for creating/managing automated trading bots
+
+If you need to manage Earn products or Grid/Smart bots, you'll need to use the Bitget web interface. The API integration can be extended in the future if Bitget.Net adds support for these endpoints.
 
 ### Submodule Management
 
