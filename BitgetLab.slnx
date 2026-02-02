@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/BitgetLab.Api/BitgetLab.Api.csproj" />
+    <Project Path="src/BitgetLab.Core/BitgetLab.Core.csproj" />
+    <Project Path="src/BitgetLab.Simulator/BitgetLab.Simulator.csproj" />
+    <Project Path="src/BitgetLab.Worker/BitgetLab.Worker.csproj" />
+  </Folder>
+</Solution>
