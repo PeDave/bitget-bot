@@ -1,0 +1,12 @@
+/home/runner/work/bitget-bot/bitget-bot/src/BitgetLab.Core/bin/Debug/net8.0/BitgetLab.Core.deps.json
+/home/runner/work/bitget-bot/bitget-bot/src/BitgetLab.Core/bin/Debug/net8.0/BitgetLab.Core.dll
+/home/runner/work/bitget-bot/bitget-bot/src/BitgetLab.Core/bin/Debug/net8.0/BitgetLab.Core.pdb
+/home/runner/work/bitget-bot/bitget-bot/src/BitgetLab.Core/obj/Debug/net8.0/BitgetLab.Core.GeneratedMSBuildEditorConfig.editorconfig
+/home/runner/work/bitget-bot/bitget-bot/src/BitgetLab.Core/obj/Debug/net8.0/BitgetLab.Core.AssemblyInfoInputs.cache
+/home/runner/work/bitget-bot/bitget-bot/src/BitgetLab.Core/obj/Debug/net8.0/BitgetLab.Core.AssemblyInfo.cs
+/home/runner/work/bitget-bot/bitget-bot/src/BitgetLab.Core/obj/Debug/net8.0/BitgetLab.Core.csproj.CoreCompileInputs.cache
+/home/runner/work/bitget-bot/bitget-bot/src/BitgetLab.Core/obj/Debug/net8.0/BitgetLab.Core.sourcelink.json
+/home/runner/work/bitget-bot/bitget-bot/src/BitgetLab.Core/obj/Debug/net8.0/BitgetLab.Core.dll
+/home/runner/work/bitget-bot/bitget-bot/src/BitgetLab.Core/obj/Debug/net8.0/refint/BitgetLab.Core.dll
+/home/runner/work/bitget-bot/bitget-bot/src/BitgetLab.Core/obj/Debug/net8.0/BitgetLab.Core.pdb
+/home/runner/work/bitget-bot/bitget-bot/src/BitgetLab.Core/obj/Debug/net8.0/ref/BitgetLab.Core.dll
