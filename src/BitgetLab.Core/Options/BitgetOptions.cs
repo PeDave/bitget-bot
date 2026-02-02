@@ -1,3 +1,5 @@
+using BitgetLab.Core.Services.Bitget;
+
 namespace BitgetLab.Core.Options;
 
 public class BitgetOptions
@@ -8,6 +10,14 @@ public class BitgetOptions
     /// Bitget API mode: ReadOnly or Trade
     /// </summary>
     public string Mode { get; set; } = "ReadOnly";
+    
+    /// <summary>
+    /// Gets the parsed mode as enum
+    /// </summary>
+    public BitgetMode GetMode()
+    {
+        return Enum.TryParse<BitgetMode>(Mode, true, out var mode) ? mode : BitgetMode.ReadOnly;
+    }
     
     public BitgetCredentials ReadOnly { get; set; } = new();
     public BitgetCredentials Trade { get; set; } = new();

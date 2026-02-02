@@ -55,8 +55,16 @@ BitgetLab is an advanced cryptocurrency trading bot system integrated with the B
 1. **Clone the repository**
 
 ```bash
-git clone https://github.com/PeDave/bitget-bot.git
+git clone --recursive https://github.com/PeDave/bitget-bot.git
 cd bitget-bot
+```
+
+**Note:** The `--recursive` flag is important as it initializes git submodules including `vendor/Bitget.Net`.
+
+If you cloned without `--recursive`, initialize submodules manually:
+
+```bash
+git submodule update --init --recursive
 ```
 
 2. **Build .NET projects**
@@ -125,9 +133,18 @@ curl http://localhost:3001/api/system/metrics
 # Service status
 curl http://localhost:3001/api/system/services
 
-# Bitget endpoints (stubs until vendor SDK is integrated)
+# Bitget endpoints
+# Get all trading symbols
 curl http://localhost:3001/api/bitget/symbols
+
+# Get ticker data for a specific symbol
 curl "http://localhost:3001/api/bitget/market/ticker?symbol=BTCUSDT"
+
+# Place order (requires Trade mode, returns 403 in ReadOnly mode)
+curl -X POST http://localhost:3001/api/bitget/orders \
+  -H "Content-Type: application/json" \
+  -d '{"symbol":"BTCUSDT","side":0,"type":0,"quantity":0.001,"price":50000}'
+# Note: side: 0=Buy, 1=Sell; type: 0=Market, 1=Limit
 ```
 
 ## 📦 Project Structure
@@ -321,20 +338,35 @@ journalctl -u labot-web -f
 2. **Service won't start**: Check logs with `journalctl -u <service> -n 100`
 3. **Build errors**: Ensure correct .NET SDK version: `dotnet --version`
 4. **Clerk errors**: Verify API keys in `.env.local`
+5. **Submodule not initialized**: Run `git submodule update --init --recursive`
 
 ## 📝 Bitget.Net Integration
 
-The Bitget SDK integration is planned but not yet implemented. See [vendor/BITGET_INTEGRATION.md](vendor/BITGET_INTEGRATION.md) for the complete integration plan.
+The Bitget SDK has been successfully integrated using git submodules. The integration provides:
 
-### To Add Bitget.Net:
+- **Market Data API**: Get symbols, tickers, and real-time market data
+- **Trading API**: Place orders (requires Trade mode)
+- **Mode-based Security**: ReadOnly mode prevents accidental trades
+
+### Submodule Management
+
+The Bitget.Net SDK is vendored under `vendor/Bitget.Net` as a git submodule.
+
+**Initialize submodules** (if not already done):
 
 ```bash
-# Add as git submodule
-git submodule add https://github.com/JKorf/Bitget.Net.git vendor/Bitget.Net
 git submodule update --init --recursive
+```
 
-# Add project reference in BitgetLab.Core.csproj
-# See BITGET_INTEGRATION.md for details
+**Update Bitget.Net to latest version**:
+
+```bash
+cd vendor/Bitget.Net
+git checkout main
+git pull
+cd ../..
+git add vendor/Bitget.Net
+git commit -m "Update Bitget.Net to latest version"
 ```
 
 ## 🤝 Contributing

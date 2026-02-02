@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using BitgetLab.Core.Services.Bitget;
 
 namespace BitgetLab.Api.Controllers;
 
@@ -6,40 +7,163 @@ namespace BitgetLab.Api.Controllers;
 [Route("api/bitget")]
 public class BitgetController : ControllerBase
 {
-    // TODO: Inject MarketDataService and TradingService when Bitget.Net is vendored
-    
-    [HttpGet("symbols")]
-    public IActionResult GetSymbols()
+    private readonly IMarketDataService _marketDataService;
+    private readonly ITradingService _tradingService;
+    private readonly IBitgetClientFactory _clientFactory;
+    private readonly ILogger<BitgetController> _logger;
+
+    public BitgetController(
+        IMarketDataService marketDataService,
+        ITradingService tradingService,
+        IBitgetClientFactory clientFactory,
+        ILogger<BitgetController> logger)
     {
-        // TODO: Implement with Bitget.Net SDK
-        return Ok(new
+        _marketDataService = marketDataService;
+        _tradingService = tradingService;
+        _clientFactory = clientFactory;
+        _logger = logger;
+    }
+
+    [HttpGet("symbols")]
+    public async Task<IActionResult> GetSymbols(CancellationToken cancellationToken)
+    {
+        try
         {
-            message = "TODO: Implement with Bitget.Net SDK",
-            symbols = new[] { "BTCUSDT", "ETHUSDT" }
-        });
+            var symbols = await _marketDataService.GetSymbolsAsync(cancellationToken);
+            var symbolsList = symbols.ToList();
+            
+            return Ok(new
+            {
+                success = true,
+                symbols = symbolsList.Take(100).ToList(), // Limit response size for performance
+                totalCount = symbolsList.Count,
+                displayedCount = Math.Min(100, symbolsList.Count)
+            });
+        }
+        catch (BitgetApiException ex)
+        {
+            _logger.LogError(ex, "Bitget API error while getting symbols");
+            return StatusCode(502, new
+            {
+                success = false,
+                error = "Failed to retrieve symbols from Bitget",
+                message = ex.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get symbols");
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
     }
 
     [HttpGet("market/ticker")]
-    public IActionResult GetTicker([FromQuery] string symbol)
+    public async Task<IActionResult> GetTicker([FromQuery] string symbol, CancellationToken cancellationToken)
     {
-        // TODO: Implement with Bitget.Net SDK
-        return Ok(new
+        if (string.IsNullOrWhiteSpace(symbol))
         {
-            message = "TODO: Implement with Bitget.Net SDK",
-            symbol,
-            price = 0.0,
-            timestamp = DateTime.UtcNow
-        });
+            return BadRequest(new
+            {
+                success = false,
+                error = "Symbol parameter is required"
+            });
+        }
+
+        try
+        {
+            var ticker = await _marketDataService.GetTickerAsync(symbol, cancellationToken);
+            return Ok(new
+            {
+                success = true,
+                data = ticker
+            });
+        }
+        catch (BitgetApiException ex)
+        {
+            _logger.LogError(ex, "Bitget API error while getting ticker for {Symbol}", symbol);
+            return StatusCode(502, new
+            {
+                success = false,
+                error = $"Failed to retrieve ticker for {symbol} from Bitget",
+                message = ex.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get ticker for {Symbol}", symbol);
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
     }
 
     [HttpPost("orders")]
-    public IActionResult PlaceOrder([FromBody] object orderRequest)
+    public async Task<IActionResult> PlaceOrder([FromBody] OrderRequest orderRequest, CancellationToken cancellationToken)
     {
-        // TODO: Implement with Bitget.Net SDK
-        return Ok(new
+        // Check if trading is allowed
+        if (!_clientFactory.IsTradeAllowed())
         {
-            message = "TODO: Implement with Bitget.Net SDK - check mode (ReadOnly/Trade)",
-            orderId = "stub-order-123"
-        });
+            return StatusCode(403, new
+            {
+                success = false,
+                error = "Trading is not allowed in ReadOnly mode",
+                message = "Please configure the API in Trade mode to place orders"
+            });
+        }
+
+        if (orderRequest == null || string.IsNullOrWhiteSpace(orderRequest.Symbol))
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Invalid order request. Symbol is required."
+            });
+        }
+
+        try
+        {
+            var result = await _tradingService.PlaceOrderAsync(orderRequest, cancellationToken);
+            return Ok(new
+            {
+                success = true,
+                data = result
+            });
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("ReadOnly"))
+        {
+            return StatusCode(403, new
+            {
+                success = false,
+                error = ex.Message
+            });
+        }
+        catch (BitgetApiException ex)
+        {
+            _logger.LogError(ex, "Bitget API error while placing order for {Symbol}", orderRequest.Symbol);
+            return StatusCode(502, new
+            {
+                success = false,
+                error = "Failed to place order on Bitget",
+                message = ex.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to place order for {Symbol}", orderRequest.Symbol);
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
     }
 }

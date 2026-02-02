@@ -6,4 +6,8 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\vendor\Bitget.Net\Bitget.Net\Bitget.Net.csproj" />
+  </ItemGroup>
+
 </Project>
