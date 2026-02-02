@@ -12,6 +12,9 @@ public class BitgetController : ControllerBase
     private readonly IAccountBalanceService _accountBalanceService;
     private readonly IFuturesPositionService _futuresPositionService;
     private readonly IAccountValuationService _accountValuationService;
+    private readonly ISpotOrderService _spotOrderService;
+    private readonly IFuturesOrderService _futuresOrderService;
+    private readonly ICopyTradingService _copyTradingService;
     private readonly IBitgetClientFactory _clientFactory;
     private readonly ILogger<BitgetController> _logger;
 
@@ -21,6 +24,9 @@ public class BitgetController : ControllerBase
         IAccountBalanceService accountBalanceService,
         IFuturesPositionService futuresPositionService,
         IAccountValuationService accountValuationService,
+        ISpotOrderService spotOrderService,
+        IFuturesOrderService futuresOrderService,
+        ICopyTradingService copyTradingService,
         IBitgetClientFactory clientFactory,
         ILogger<BitgetController> logger)
     {
@@ -29,6 +35,9 @@ public class BitgetController : ControllerBase
         _accountBalanceService = accountBalanceService;
         _futuresPositionService = futuresPositionService;
         _accountValuationService = accountValuationService;
+        _spotOrderService = spotOrderService;
+        _futuresOrderService = futuresOrderService;
+        _copyTradingService = copyTradingService;
         _clientFactory = clientFactory;
         _logger = logger;
     }
@@ -355,6 +364,144 @@ public class BitgetController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to get account valuation");
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
+    }
+
+    [HttpGet("spot/orders/open")]
+    public async Task<IActionResult> GetSpotOpenOrders(
+        [FromQuery] string? symbol = null,
+        [FromQuery] int? limit = null,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var orders = await _spotOrderService.GetOpenOrdersAsync(symbol, limit, cancellationToken);
+            var orderList = orders.ToList();
+            
+            return Ok(new
+            {
+                success = true,
+                data = orderList,
+                count = orderList.Count
+            });
+        }
+        catch (BitgetApiException ex)
+        {
+            _logger.LogError(ex, "Bitget API error while getting spot open orders");
+            return StatusCode(502, new
+            {
+                success = false,
+                error = "Failed to retrieve spot open orders from Bitget",
+                message = ex.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get spot open orders");
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
+    }
+
+    [HttpGet("futures/orders/open")]
+    public async Task<IActionResult> GetFuturesOpenOrders(
+        [FromQuery] string? productType = null,
+        [FromQuery] string? symbol = null,
+        [FromQuery] bool includeUsdt = true,
+        [FromQuery] bool includeUsdc = true,
+        [FromQuery] string? marginAsset = null,
+        [FromQuery] int? limit = null,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var orders = await _futuresOrderService.GetOpenOrdersAsync(
+                productType,
+                symbol,
+                includeUsdt,
+                includeUsdc,
+                marginAsset,
+                limit,
+                cancellationToken);
+            var orderList = orders.ToList();
+            
+            return Ok(new
+            {
+                success = true,
+                data = orderList,
+                count = orderList.Count
+            });
+        }
+        catch (BitgetApiException ex)
+        {
+            _logger.LogError(ex, "Bitget API error while getting futures open orders");
+            return StatusCode(502, new
+            {
+                success = false,
+                error = "Failed to retrieve futures open orders from Bitget",
+                message = ex.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get futures open orders");
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
+    }
+
+    [HttpGet("copytrading/current-orders")]
+    public async Task<IActionResult> GetCopyTradingCurrentOrders(
+        [FromQuery] string? productType = null,
+        [FromQuery] string? symbol = null,
+        [FromQuery] string? traderId = null,
+        [FromQuery] int limit = 20,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var orders = await _copyTradingService.GetCurrentOrdersAsync(
+                productType,
+                symbol,
+                traderId,
+                limit,
+                cancellationToken);
+            var orderList = orders.ToList();
+            
+            return Ok(new
+            {
+                success = true,
+                data = orderList,
+                count = orderList.Count
+            });
+        }
+        catch (BitgetApiException ex)
+        {
+            _logger.LogError(ex, "Bitget API error while getting copy trading current orders");
+            return StatusCode(502, new
+            {
+                success = false,
+                error = "Failed to retrieve copy trading current orders from Bitget",
+                message = ex.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get copy trading current orders");
             return StatusCode(500, new
             {
                 success = false,
