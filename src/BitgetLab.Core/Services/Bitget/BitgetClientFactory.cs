@@ -42,10 +42,9 @@ public class BitgetClientFactory : IBitgetClientFactory
         {
             options.ApiCredentials = new ApiCredentials(
                 credentials.ApiKey,
-                credentials.ApiSecret
+                credentials.ApiSecret,
+                credentials.Passphrase
             );
-            // Note: Bitget.Net handles passphrase differently - it's part of the authentication process
-            // The passphrase should be set in the request headers when needed
         });
     }
 

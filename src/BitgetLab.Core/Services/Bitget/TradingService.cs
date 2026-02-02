@@ -91,13 +91,13 @@ public class TradingService : ITradingService
             }
             else
             {
-                // Market order
+                // Market order - use ImmediateOrCancel for market orders
                 var result = await _client.SpotApiV2.Trading.PlaceOrderAsync(
                     symbol: request.Symbol,
                     side: side,
                     type: OrderType.Market,
                     quantity: request.Quantity,
-                    timeInForce: TimeInForce.GoodTillCanceled,
+                    timeInForce: TimeInForce.ImmediateOrCancel,
                     ct: cancellationToken
                 );
 

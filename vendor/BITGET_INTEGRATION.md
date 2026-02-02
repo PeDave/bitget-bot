@@ -197,17 +197,8 @@ Bitget__ReadOnly__ApiKey=your_key
 Bitget__ReadOnly__ApiSecret=your_secret
 Bitget__ReadOnly__Passphrase=your_passphrase
 ```
-    {
-        try
-        {
-            var result = await _trading.PlaceOrderAsync(request);
-            return Ok(result);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return BadRequest(new { error = ex.Message });
-        }
-    }
+
+## API Endpoints
 }
 ```
 
