@@ -1,0 +1,3 @@
+[submodule "vendor/Bitget.Net"]
+	path = vendor/Bitget.Net
+	url = https://github.com/JKorf/Bitget.Net.git
