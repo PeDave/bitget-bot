@@ -173,12 +173,32 @@ curl "http://localhost:3001/api/bitget/futures/positions?usdtMarginAsset=USDT&us
 # Get account valuation (total balance across all account types)
 curl http://localhost:3001/api/bitget/account/valuation
 
+# Get spot open orders
+curl http://localhost:3001/api/bitget/spot/orders/open
+
+# Get spot open orders with filters
+curl "http://localhost:3001/api/bitget/spot/orders/open?symbol=BTCUSDT&limit=50"
+
+# Get futures open orders (USDT and USDC futures)
+curl http://localhost:3001/api/bitget/futures/orders/open
+
+# Get futures open orders with filters
+curl "http://localhost:3001/api/bitget/futures/orders/open?includeUsdc=false&symbol=BTCUSDT&limit=50"
+
+# Get copy trading current orders
+curl http://localhost:3001/api/bitget/copytrading/current-orders
+
+# Get copy trading current orders with filters
+curl "http://localhost:3001/api/bitget/copytrading/current-orders?productType=USDT-FUTURES&symbol=BTCUSDT&limit=50"
+
 # Place order (requires Trade mode, returns 403 in ReadOnly mode)
 curl -X POST http://localhost:3001/api/bitget/orders \
   -H "Content-Type: application/json" \
   -d '{"symbol":"BTCUSDT","side":0,"type":0,"quantity":0.001,"price":50000}'
 # Note: side: 0=Buy, 1=Sell; type: 0=Market, 1=Limit
 ```
+
+**Note on Earn/Bots**: Balances from Earn and Bots products are included in the `/api/bitget/account/valuation` endpoint, but there is no dedicated Earn/Bots API client in Bitget.Net for querying detailed information about these products.
 
 ## 📦 Project Structure
 
