@@ -1,6 +1,13 @@
 #!/bin/bash
 # BitgetLab Build Script
 # This script builds all .NET projects in the solution
+#
+# Usage:
+#   ./build.sh          # Build in Release mode (default)
+#   ./build.sh Debug    # Build in Debug mode
+#
+# Note: Ensure this script has executable permissions:
+#   chmod +x build.sh
 
 set -e  # Exit on error
 
