@@ -44,15 +44,17 @@ BitgetLab is an advanced cryptocurrency trading bot system integrated with the B
 
 ### Prerequisites
 
-- .NET 8 SDK
+- .NET 8 SDK (required for building the project)
 - Node.js 20+
 - npm or yarn
+
+> **Note:** This project is designed for .NET 8. The VPS runs .NET 8 SDK, and the Bitget.Net fork ensures full .NET 8 compatibility. Do not use .NET 9 as it may introduce compatibility issues.
 
 ### Development Setup
 
 > **⚠️ Important:** Always clone the repository to a clean directory. Avoid creating nested copies like `bitget-bot/bitget-bot/` which can confuse build tools and deployment scripts. The canonical source should always be under `src/` at the repository root.
 
-1. **Clone the repository**
+1. **Clone the repository with submodules**
 
 ```bash
 git clone --recursive https://github.com/PeDave/bitget-bot.git
@@ -61,10 +63,24 @@ cd bitget-bot
 
 **Note:** The `--recursive` flag is important as it initializes git submodules including `vendor/Bitget.Net`.
 
+The Bitget.Net submodule points to the PeDave fork at `https://github.com/PeDave/Bitget.Net`, which ensures .NET 8 compatibility for VPS deployment.
+
+2. **Initialize submodules manually (if cloned without --recursive)**
+
 If you cloned without `--recursive`, initialize submodules manually:
 
 ```bash
 git submodule update --init --recursive
+```
+
+To update the Bitget.Net submodule to the latest version from the fork:
+
+```bash
+cd vendor/Bitget.Net
+git pull origin main
+cd ../..
+git add vendor/Bitget.Net
+git commit -m "Update Bitget.Net submodule to latest version"
 ```
 
 2. **Build .NET projects**
@@ -92,6 +108,7 @@ cd src/BitgetLab.Api
 dotnet run
 
 # API will be available at http://localhost:3001
+# Swagger UI available at http://localhost:3001/swagger (in Development mode)
 ```
 
 4. **Run the Worker (optional)**
@@ -127,6 +144,12 @@ npm run dev
 # Health check
 curl http://localhost:3001/api/health
 
+# Swagger JSON (Development mode)
+curl http://localhost:3001/swagger/v1/swagger.json
+
+# Swagger UI (Development mode)
+# Open in browser: http://localhost:3001/swagger
+
 # System metrics
 curl http://localhost:3001/api/system/metrics
 
@@ -141,11 +164,35 @@ curl http://localhost:3001/api/bitget/symbols
 curl "http://localhost:3001/api/bitget/market/ticker?symbol=BTCUSDT"
 
 # Place order (requires Trade mode, returns 403 in ReadOnly mode)
+# Limit order
 curl -X POST http://localhost:3001/api/bitget/orders \
   -H "Content-Type: application/json" \
-  -d '{"symbol":"BTCUSDT","side":0,"type":0,"quantity":0.001,"price":50000}'
-# Note: side: 0=Buy, 1=Sell; type: 0=Market, 1=Limit
+  -d '{
+    "symbol": "BTCUSDT",
+    "side": "Buy",
+    "type": "Limit",
+    "quantity": 0.001,
+    "price": 50000
+  }'
+
+# Market order
+curl -X POST http://localhost:3001/api/bitget/orders \
+  -H "Content-Type: application/json" \
+  -d '{
+    "symbol": "ETHUSDT",
+    "side": "Sell",
+    "type": "Market",
+    "quantity": 0.01
+  }'
 ```
+
+**Order Endpoint Notes:**
+- Enum values are case-insensitive: `"buy"`, `"Buy"`, `"BUY"` are all valid
+- Supported `side` values: `Buy`, `Sell`
+- Supported `type` values: `Market`, `Limit`
+- `price` is required for Limit orders, optional for Market orders
+- Returns 400 for invalid requests (missing required fields, invalid enums)
+- Returns 403 when API is in ReadOnly mode
 
 ## 📦 Project Structure
 
@@ -222,9 +269,18 @@ Edit `src/BitgetLab.Api/appsettings.json`:
       "ApiSecret": "your_trade_api_secret",
       "Passphrase": "your_trade_passphrase"
     }
+  },
+  "Swagger": {
+    "EnableInProduction": false  // Set to true to enable Swagger in Production
   }
 }
 ```
+
+**Swagger Configuration:**
+- Swagger is automatically enabled in Development environment
+- To enable Swagger in Production, set `Swagger:EnableInProduction` to `true`
+- Swagger UI: `/swagger`
+- Swagger JSON: `/swagger/v1/swagger.json`
 
 ### Web Configuration
 
@@ -350,7 +406,12 @@ The Bitget SDK has been successfully integrated using git submodules. The integr
 
 ### Submodule Management
 
-The Bitget.Net SDK is vendored under `vendor/Bitget.Net` as a git submodule.
+The Bitget.Net SDK is vendored under `vendor/Bitget.Net` as a git submodule pointing to the **PeDave fork** at `https://github.com/PeDave/Bitget.Net`.
+
+**Why the fork?**
+- The VPS runs .NET 8 SDK
+- The PeDave fork ensures full .NET 8 compatibility
+- This avoids any potential compatibility issues with newer .NET versions
 
 **Initialize submodules** (if not already done):
 
@@ -358,15 +419,25 @@ The Bitget.Net SDK is vendored under `vendor/Bitget.Net` as a git submodule.
 git submodule update --init --recursive
 ```
 
-**Update Bitget.Net to latest version**:
+**Update Bitget.Net to latest version from the fork**:
 
 ```bash
 cd vendor/Bitget.Net
-git checkout main
-git pull
+git pull origin main
 cd ../..
 git add vendor/Bitget.Net
 git commit -m "Update Bitget.Net to latest version"
+```
+
+**Verify submodule configuration**:
+
+```bash
+# Check submodule remote URL
+git config --file .gitmodules --get-regexp url
+# Should show: submodule.vendor/Bitget.Net.url https://github.com/PeDave/Bitget.Net.git
+
+# Check current commit
+cd vendor/Bitget.Net && git log --oneline -1
 ```
 
 ## 🤝 Contributing

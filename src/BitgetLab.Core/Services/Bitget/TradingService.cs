@@ -1,3 +1,6 @@
+using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
+
 namespace BitgetLab.Core.Services.Bitget;
 
 /// <summary>
@@ -61,10 +64,33 @@ public class TradingService : ITradingService
 /// </summary>
 public class OrderRequest
 {
+    /// <summary>
+    /// Trading pair symbol (e.g., BTCUSDT, ETHUSDT)
+    /// </summary>
+    [Required]
     public string Symbol { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// Order side. Supported values: Buy, Sell (case-insensitive)
+    /// </summary>
+    [Required]
     public OrderSide Side { get; set; }
+    
+    /// <summary>
+    /// Order type. Supported values: Market, Limit (case-insensitive)
+    /// </summary>
+    [Required]
     public OrderType Type { get; set; }
+    
+    /// <summary>
+    /// Order quantity/amount
+    /// </summary>
+    [Required]
     public decimal Quantity { get; set; }
+    
+    /// <summary>
+    /// Order price (required for Limit orders, optional for Market orders)
+    /// </summary>
     public decimal? Price { get; set; }
 }
 
@@ -82,17 +108,23 @@ public class OrderResult
 /// <summary>
 /// Order side enum
 /// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum OrderSide
 {
+    /// <summary>Buy order</summary>
     Buy,
+    /// <summary>Sell order</summary>
     Sell
 }
 
 /// <summary>
 /// Order type enum
 /// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum OrderType
 {
+    /// <summary>Market order (executed at current market price)</summary>
     Market,
+    /// <summary>Limit order (executed at specified price or better)</summary>
     Limit
 }

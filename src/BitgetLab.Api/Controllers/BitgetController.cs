@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Swashbuckle.AspNetCore.Annotations;
 using BitgetLab.Core.Services.Bitget;
 
 namespace BitgetLab.Api.Controllers;
@@ -25,6 +26,14 @@ public class BitgetController : ControllerBase
     }
 
     [HttpGet("symbols")]
+    [SwaggerOperation(
+        Summary = "Get all trading symbols",
+        Description = "Retrieves a list of all available spot trading symbols from Bitget. Returns first 100 symbols for performance.",
+        Tags = new[] { "Market Data" }
+    )]
+    [SwaggerResponse(200, "Successfully retrieved symbols")]
+    [SwaggerResponse(502, "Bitget API error")]
+    [SwaggerResponse(500, "Internal server error")]
     public async Task<IActionResult> GetSymbols(CancellationToken cancellationToken)
     {
         try
@@ -63,7 +72,16 @@ public class BitgetController : ControllerBase
     }
 
     [HttpGet("market/ticker")]
-    public async Task<IActionResult> GetTicker([FromQuery] string symbol, CancellationToken cancellationToken)
+    [SwaggerOperation(
+        Summary = "Get ticker data for a symbol",
+        Description = "Retrieves current ticker data (price, volume, etc.) for a specific trading symbol.",
+        Tags = new[] { "Market Data" }
+    )]
+    [SwaggerResponse(200, "Successfully retrieved ticker data")]
+    [SwaggerResponse(400, "Symbol parameter is required")]
+    [SwaggerResponse(502, "Bitget API error")]
+    [SwaggerResponse(500, "Internal server error")]
+    public async Task<IActionResult> GetTicker([FromQuery, SwaggerParameter("Trading symbol", Required = true)] string symbol, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(symbol))
         {
@@ -106,7 +124,18 @@ public class BitgetController : ControllerBase
     }
 
     [HttpPost("orders")]
-    public async Task<IActionResult> PlaceOrder([FromBody] OrderRequest orderRequest, CancellationToken cancellationToken)
+    [SwaggerOperation(
+        Summary = "Place a trading order",
+        Description = "Places a spot trading order on Bitget. Requires Trade mode to be enabled in configuration. " +
+                     "Enum values (Side, Type) are case-insensitive: 'buy'/'Buy', 'sell'/'Sell', 'market'/'Market', 'limit'/'Limit' are all valid.",
+        Tags = new[] { "Trading" }
+    )]
+    [SwaggerResponse(200, "Order placed successfully", typeof(object))]
+    [SwaggerResponse(400, "Invalid request - missing or invalid parameters")]
+    [SwaggerResponse(403, "Trading not allowed - API is in ReadOnly mode")]
+    [SwaggerResponse(502, "Bitget API error")]
+    [SwaggerResponse(500, "Internal server error")]
+    public async Task<IActionResult> PlaceOrder([FromBody, SwaggerRequestBody("Order details", Required = true)] OrderRequest orderRequest, CancellationToken cancellationToken)
     {
         // Check if trading is allowed
         if (!_clientFactory.IsTradeAllowed())
