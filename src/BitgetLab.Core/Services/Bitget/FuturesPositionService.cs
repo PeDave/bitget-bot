@@ -1,5 +1,7 @@
 using Bitget.Net.Enums;
+using Bitget.Net.Interfaces.Clients;
 using BitgetLab.Core.Models;
+using System.Collections.Concurrent;
 
 namespace BitgetLab.Core.Services.Bitget;
 
@@ -43,84 +45,20 @@ public class FuturesPositionService : IFuturesPositionService
     {
         using var client = _clientFactory.CreateRestClient();
         
-        var positions = new List<FuturesPositionDto>();
+        var positions = new ConcurrentBag<FuturesPositionDto>();
         var tasks = new List<Task>();
 
         // Query USDT Futures in parallel
         if (includeUsdt)
         {
-            var usdtTask = Task.Run(async () =>
-            {
-                var marginAsset = usdtMarginAsset ?? "USDT";
-                var result = await client.FuturesApiV2.Trading.GetPositionsAsync(
-                    BitgetProductTypeV2.UsdtFutures,
-                    marginAsset,
-                    cancellationToken);
-                
-                if (!result.Success)
-                {
-                    throw new BitgetApiException($"Failed to get USDT futures positions: {result.Error?.Message ?? "Unknown error"}");
-                }
-
-                var usdtPositions = result.Data.Select(p => new FuturesPositionDto
-                {
-                    Symbol = p.Symbol,
-                    PositionSide = p.PositionSide.ToString(),
-                    Total = p.Total,
-                    Available = p.Available,
-                    AverageOpenPrice = p.AverageOpenPrice,
-                    UnrealizedPnl = p.UnrealizedProfitAndLoss,
-                    Leverage = p.Leverage,
-                    LiquidationPrice = p.LiquidationPrice,
-                    UpdateTime = p.UpdateTime,
-                    ProductType = "USDT-FUTURES",
-                    MarginAsset = marginAsset
-                }).ToList();
-
-                lock (positions)
-                {
-                    positions.AddRange(usdtPositions);
-                }
-            }, cancellationToken);
+            var usdtTask = GetUsdtPositionsAsync(client, usdtMarginAsset ?? "USDT", positions, cancellationToken);
             tasks.Add(usdtTask);
         }
         
         // Query USDC Futures in parallel
         if (includeUsdc)
         {
-            var usdcTask = Task.Run(async () =>
-            {
-                var marginAsset = usdcMarginAsset ?? "USDC";
-                var result = await client.FuturesApiV2.Trading.GetPositionsAsync(
-                    BitgetProductTypeV2.UsdcFutures,
-                    marginAsset,
-                    cancellationToken);
-                
-                if (!result.Success)
-                {
-                    throw new BitgetApiException($"Failed to get USDC futures positions: {result.Error?.Message ?? "Unknown error"}");
-                }
-
-                var usdcPositions = result.Data.Select(p => new FuturesPositionDto
-                {
-                    Symbol = p.Symbol,
-                    PositionSide = p.PositionSide.ToString(),
-                    Total = p.Total,
-                    Available = p.Available,
-                    AverageOpenPrice = p.AverageOpenPrice,
-                    UnrealizedPnl = p.UnrealizedProfitAndLoss,
-                    Leverage = p.Leverage,
-                    LiquidationPrice = p.LiquidationPrice,
-                    UpdateTime = p.UpdateTime,
-                    ProductType = "USDC-FUTURES",
-                    MarginAsset = marginAsset
-                }).ToList();
-
-                lock (positions)
-                {
-                    positions.AddRange(usdcPositions);
-                }
-            }, cancellationToken);
+            var usdcTask = GetUsdcPositionsAsync(client, usdcMarginAsset ?? "USDC", positions, cancellationToken);
             tasks.Add(usdcTask);
         }
         
@@ -128,5 +66,75 @@ public class FuturesPositionService : IFuturesPositionService
         await Task.WhenAll(tasks);
         
         return positions;
+    }
+
+    private async Task GetUsdtPositionsAsync(
+        IBitgetRestClient client,
+        string marginAsset,
+        ConcurrentBag<FuturesPositionDto> positions,
+        CancellationToken cancellationToken)
+    {
+        var result = await client.FuturesApiV2.Trading.GetPositionsAsync(
+            BitgetProductTypeV2.UsdtFutures,
+            marginAsset,
+            cancellationToken);
+        
+        if (!result.Success)
+        {
+            throw new BitgetApiException($"Failed to get USDT futures positions: {result.Error?.Message ?? "Unknown error"}");
+        }
+
+        foreach (var p in result.Data)
+        {
+            positions.Add(new FuturesPositionDto
+            {
+                Symbol = p.Symbol,
+                PositionSide = p.PositionSide.ToString(),
+                Total = p.Total,
+                Available = p.Available,
+                AverageOpenPrice = p.AverageOpenPrice,
+                UnrealizedPnl = p.UnrealizedProfitAndLoss,
+                Leverage = p.Leverage,
+                LiquidationPrice = p.LiquidationPrice,
+                UpdateTime = p.UpdateTime,
+                ProductType = "USDT-FUTURES",
+                MarginAsset = marginAsset
+            });
+        }
+    }
+
+    private async Task GetUsdcPositionsAsync(
+        IBitgetRestClient client,
+        string marginAsset,
+        ConcurrentBag<FuturesPositionDto> positions,
+        CancellationToken cancellationToken)
+    {
+        var result = await client.FuturesApiV2.Trading.GetPositionsAsync(
+            BitgetProductTypeV2.UsdcFutures,
+            marginAsset,
+            cancellationToken);
+        
+        if (!result.Success)
+        {
+            throw new BitgetApiException($"Failed to get USDC futures positions: {result.Error?.Message ?? "Unknown error"}");
+        }
+
+        foreach (var p in result.Data)
+        {
+            positions.Add(new FuturesPositionDto
+            {
+                Symbol = p.Symbol,
+                PositionSide = p.PositionSide.ToString(),
+                Total = p.Total,
+                Available = p.Available,
+                AverageOpenPrice = p.AverageOpenPrice,
+                UnrealizedPnl = p.UnrealizedProfitAndLoss,
+                Leverage = p.Leverage,
+                LiquidationPrice = p.LiquidationPrice,
+                UpdateTime = p.UpdateTime,
+                ProductType = "USDC-FUTURES",
+                MarginAsset = marginAsset
+            });
+        }
     }
 }
