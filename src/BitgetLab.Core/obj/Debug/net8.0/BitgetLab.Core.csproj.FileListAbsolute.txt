@@ -10,3 +10,8 @@
 /home/runner/work/bitget-bot/bitget-bot/src/BitgetLab.Core/obj/Debug/net8.0/refint/BitgetLab.Core.dll
 /home/runner/work/bitget-bot/bitget-bot/src/BitgetLab.Core/obj/Debug/net8.0/BitgetLab.Core.pdb
 /home/runner/work/bitget-bot/bitget-bot/src/BitgetLab.Core/obj/Debug/net8.0/ref/BitgetLab.Core.dll
+/home/runner/work/bitget-bot/bitget-bot/src/BitgetLab.Core/obj/Debug/net8.0/BitgetLab.Core.csproj.AssemblyReference.cache
+/home/runner/work/bitget-bot/bitget-bot/src/BitgetLab.Core/bin/Debug/net8.0/Bitget.Net.dll
+/home/runner/work/bitget-bot/bitget-bot/src/BitgetLab.Core/bin/Debug/net8.0/Bitget.Net.pdb
+/home/runner/work/bitget-bot/bitget-bot/src/BitgetLab.Core/bin/Debug/net8.0/Bitget.Net.xml
+/home/runner/work/bitget-bot/bitget-bot/src/BitgetLab.Core/obj/Debug/net8.0/BitgetLa.4C9A5A00.Up2Date
