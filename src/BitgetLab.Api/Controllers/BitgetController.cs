@@ -12,6 +12,7 @@ public class BitgetController : ControllerBase
     private readonly IAccountBalanceService _accountBalanceService;
     private readonly IFuturesPositionService _futuresPositionService;
     private readonly IAccountValuationService _accountValuationService;
+    private readonly IOpenOrderService _openOrderService;
     private readonly IBitgetClientFactory _clientFactory;
     private readonly ILogger<BitgetController> _logger;
 
@@ -21,6 +22,7 @@ public class BitgetController : ControllerBase
         IAccountBalanceService accountBalanceService,
         IFuturesPositionService futuresPositionService,
         IAccountValuationService accountValuationService,
+        IOpenOrderService openOrderService,
         IBitgetClientFactory clientFactory,
         ILogger<BitgetController> logger)
     {
@@ -29,6 +31,7 @@ public class BitgetController : ControllerBase
         _accountBalanceService = accountBalanceService;
         _futuresPositionService = futuresPositionService;
         _accountValuationService = accountValuationService;
+        _openOrderService = openOrderService;
         _clientFactory = clientFactory;
         _logger = logger;
     }
@@ -362,5 +365,126 @@ public class BitgetController : ControllerBase
                 message = ex.Message
             });
         }
+    }
+
+    [HttpGet("spot/orders/open")]
+    public async Task<IActionResult> GetSpotOpenOrders(
+        [FromQuery] string? symbol = null,
+        [FromQuery] int? limit = null,
+        [FromQuery] string? idLessThan = null,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var orders = await _openOrderService.GetSpotOpenOrdersAsync(
+                symbol, limit, idLessThan, cancellationToken);
+            var orderList = orders.ToList();
+            
+            return Ok(new
+            {
+                success = true,
+                data = orderList,
+                count = orderList.Count
+            });
+        }
+        catch (BitgetApiException ex)
+        {
+            _logger.LogError(ex, "Bitget API error while getting spot open orders");
+            return StatusCode(502, new
+            {
+                success = false,
+                error = "Failed to retrieve spot open orders from Bitget",
+                message = ex.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get spot open orders");
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
+    }
+
+    [HttpGet("futures/orders/open")]
+    public async Task<IActionResult> GetFuturesOpenOrders(
+        [FromQuery] string? symbol = null,
+        [FromQuery] bool includeUsdt = true,
+        [FromQuery] bool includeUsdc = true,
+        [FromQuery] string? status = null,
+        [FromQuery] int? limit = null,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // Parse status if provided
+            Bitget.Net.Enums.V2.OrderStatus? orderStatus = null;
+            if (!string.IsNullOrEmpty(status))
+            {
+                if (Enum.TryParse<Bitget.Net.Enums.V2.OrderStatus>(status, true, out var parsedStatus))
+                {
+                    orderStatus = parsedStatus;
+                }
+                else
+                {
+                    return BadRequest(new
+                    {
+                        success = false,
+                        error = $"Invalid status value: {status}. Valid values are: Live, PartiallyFilled, Filled, Cancelled"
+                    });
+                }
+            }
+
+            var orders = await _openOrderService.GetFuturesOpenOrdersAsync(
+                symbol, includeUsdt, includeUsdc, orderStatus, limit, cancellationToken);
+            var orderList = orders.ToList();
+            
+            return Ok(new
+            {
+                success = true,
+                data = orderList,
+                count = orderList.Count
+            });
+        }
+        catch (BitgetApiException ex)
+        {
+            _logger.LogError(ex, "Bitget API error while getting futures open orders");
+            return StatusCode(502, new
+            {
+                success = false,
+                error = "Failed to retrieve futures open orders from Bitget",
+                message = ex.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get futures open orders");
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
+    }
+
+    [HttpGet("copytrading/current-orders")]
+    public IActionResult GetCopyTradingCurrentOrders(
+        [FromQuery] string productType = "USDT-FUTURES",
+        [FromQuery] int limit = 20,
+        [FromQuery] string? symbol = null,
+        [FromQuery] string? traderId = null)
+    {
+        // CopyTrading API is not yet implemented in Bitget.Net
+        // This endpoint is stubbed for future implementation
+        return StatusCode(501, new
+        {
+            success = false,
+            error = "Not Implemented",
+            message = "CopyTrading current orders endpoint is not yet implemented. The Bitget.Net SDK does not currently provide full support for CopyTrading APIs."
+        });
     }
 }

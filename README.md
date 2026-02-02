@@ -173,12 +173,51 @@ curl "http://localhost:3001/api/bitget/futures/positions?usdtMarginAsset=USDT&us
 # Get account valuation (total balance across all account types)
 curl http://localhost:3001/api/bitget/account/valuation
 
+# Get spot open orders
+curl http://localhost:3001/api/bitget/spot/orders/open
+
+# Get spot open orders for a specific symbol
+curl "http://localhost:3001/api/bitget/spot/orders/open?symbol=BTCUSDT"
+
+# Get spot open orders with limit
+curl "http://localhost:3001/api/bitget/spot/orders/open?limit=10"
+
+# Get spot open orders with pagination cursor
+curl "http://localhost:3001/api/bitget/spot/orders/open?idLessThan=123456789"
+
+# Get futures open orders (USDT and USDC futures)
+curl http://localhost:3001/api/bitget/futures/orders/open
+
+# Get futures open orders for a specific symbol
+curl "http://localhost:3001/api/bitget/futures/orders/open?symbol=BTCUSDT"
+
+# Get only USDT futures open orders
+curl "http://localhost:3001/api/bitget/futures/orders/open?includeUsdc=false"
+
+# Get only USDC futures open orders
+curl "http://localhost:3001/api/bitget/futures/orders/open?includeUsdt=false"
+
+# Get futures open orders with status filter
+curl "http://localhost:3001/api/bitget/futures/orders/open?status=Live"
+# Valid status values: Live, PartiallyFilled, Filled, Cancelled
+
+# Get futures open orders with limit
+curl "http://localhost:3001/api/bitget/futures/orders/open?limit=20"
+
+# Get CopyTrading current orders (not yet implemented - returns 501)
+curl "http://localhost:3001/api/bitget/copytrading/current-orders?productType=USDT-FUTURES"
+
 # Place order (requires Trade mode, returns 403 in ReadOnly mode)
 curl -X POST http://localhost:3001/api/bitget/orders \
   -H "Content-Type: application/json" \
   -d '{"symbol":"BTCUSDT","side":0,"type":0,"quantity":0.001,"price":50000}'
 # Note: side: 0=Buy, 1=Sell; type: 0=Market, 1=Limit
 ```
+
+**Note on Earn and Bots:**
+- Earn and Bots products are visible via the account valuation endpoint (`/api/bitget/account/valuation`)
+- There is currently no dedicated Earn/Bots API client in Bitget.Net
+- The account valuation endpoint aggregates balances across all account types including Earn and Bots products
 
 ## 📦 Project Structure
 

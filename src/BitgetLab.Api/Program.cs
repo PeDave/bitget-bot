@@ -19,6 +19,7 @@ builder.Services.AddSingleton<ITradingService, TradingService>();
 builder.Services.AddSingleton<IAccountBalanceService, AccountBalanceService>();
 builder.Services.AddSingleton<IFuturesPositionService, FuturesPositionService>();
 builder.Services.AddSingleton<IAccountValuationService, AccountValuationService>();
+builder.Services.AddSingleton<IOpenOrderService, OpenOrderService>();
 
 // Register system services
 builder.Services.AddSingleton<ISystemMetricsService, SystemMetricsService>();
