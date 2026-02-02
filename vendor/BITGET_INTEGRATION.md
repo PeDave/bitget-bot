@@ -199,8 +199,12 @@ Bitget__ReadOnly__Passphrase=your_passphrase
 ```
 
 ## API Endpoints
-}
-```
+
+The following endpoints are available:
+
+- `GET /api/bitget/symbols` - Returns all available trading symbols
+- `GET /api/bitget/market/ticker?symbol=BTCUSDT` - Returns ticker data for a specific symbol
+- `POST /api/bitget/orders` - Places an order (requires Trade mode)
 
 ## Testing
 
