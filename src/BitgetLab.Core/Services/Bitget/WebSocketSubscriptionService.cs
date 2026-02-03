@@ -603,6 +603,8 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
             "1d" => TimeSpan.FromDays(1),
             "3d" => TimeSpan.FromDays(3),
             "1w" => TimeSpan.FromDays(7),
+            // Note: Using 30 days as approximation for 1 month interval
+            // This may cause minor gap detection inaccuracies for months with 28, 29, or 31 days
             "1mo" or "1month" => TimeSpan.FromDays(30),
             _ => TimeSpan.FromMinutes(1)
         };
