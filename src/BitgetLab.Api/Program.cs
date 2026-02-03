@@ -29,6 +29,9 @@ builder.Services.AddSingleton<ICopyTradingService, CopyTradingService>();
 builder.Services.AddSingleton<ICandleService, CandleService>();
 builder.Services.AddSingleton<IIndicatorService, IndicatorService>();
 builder.Services.AddSingleton<IWebSocketSubscriptionService, WebSocketSubscriptionService>();
+// Register WebSocket subscription service as hosted service
+builder.Services.AddHostedService<WebSocketSubscriptionService>(sp => 
+    (WebSocketSubscriptionService)sp.GetRequiredService<IWebSocketSubscriptionService>());
 
 // Register system services
 builder.Services.AddSingleton<ISystemMetricsService, SystemMetricsService>();

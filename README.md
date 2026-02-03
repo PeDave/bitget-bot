@@ -230,6 +230,14 @@ curl http://localhost:3001/api/bitget/copytrading/current-orders
 # Get copy trading current orders with filters
 curl "http://localhost:3001/api/bitget/copytrading/current-orders?productType=USDT-FUTURES&symbol=BTCUSDT&limit=50"
 
+# Subscribe to candle updates for a symbol/interval pair
+curl -X POST http://localhost:3001/api/bitget/market/subscribe \
+  -H "Content-Type: application/json" \
+  -d '{"symbol":"BTCUSDT","interval":"1h"}'
+
+# Get latest candle for a subscribed symbol/interval
+curl "http://localhost:3001/api/bitget/market/latest-candle?symbol=BTCUSDT&interval=1h"
+
 # Place order (requires Trade mode, returns 403 in ReadOnly mode)
 curl -X POST http://localhost:3001/api/bitget/orders \
   -H "Content-Type: application/json" \
