@@ -23,6 +23,10 @@ public class CandleSubscription
     public CandleDto? LatestCandle { get; set; }
     public CandleRingBuffer RingBuffer { get; set; } = null!;
     public DateTime? LastOpenTime { get; set; }
+    /// <summary>
+    /// Last time a backfill was started for this subscription (to prevent backfill storms)
+    /// </summary>
+    public DateTime? LastBackfillTime { get; set; }
 }
 
 /// <summary>
@@ -193,10 +197,10 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
     {
         var backfillKey = GetSubscriptionKey(workItem.Symbol, workItem.Interval);
         
-        // Check if already backfilling this subscription
+        // Check if already backfilling this subscription (prevents concurrent processing)
         if (!_activeBackfills.TryAdd(backfillKey, 0))
         {
-            _logger.LogDebug("Backfill already in progress for {Symbol} {Interval}, skipping", 
+            _logger.LogTrace("Backfill already in progress for {Symbol} {Interval}, skipping", 
                 workItem.Symbol, workItem.Interval);
             return;
         }
@@ -238,6 +242,11 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
                             Candles = backfillList
                         });
                     }
+                }
+                else
+                {
+                    _logger.LogDebug("No candles returned from backfill for {Symbol} {Interval}", 
+                        workItem.Symbol, workItem.Interval);
                 }
             }
         }
@@ -344,31 +353,90 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
                                 // Update ring buffer
                                 subscription.RingBuffer.AddOrUpdate(candle);
                                 
-                                _logger.LogDebug("Updated candle for {Symbol} {Interval}: Close={Close}", 
-                                    symbol, interval, candle.Close);
+                                _logger.LogTrace("Updated candle for {Symbol} {Interval}: OpenTime={OpenTime}, Close={Close}", 
+                                    symbol, interval, candle.OpenTime, candle.Close);
 
-                                // O(1) gap detection by checking lastOpenTime vs newOpenTime
+                                // Gap detection: only check if incoming candle is strictly newer than last processed
                                 if (_chartingOptions.EnableGapDetection && subscription.LastOpenTime.HasValue)
                                 {
-                                    var expectedDuration = ParseIntervalToTimeSpan(interval);
-                                    var timeSinceLastCandle = candle.OpenTime - subscription.LastOpenTime.Value;
-                                    
-                                    // If gap detected (time difference > expected interval)
-                                    if (timeSinceLastCandle > expectedDuration)
+                                    // Only detect gaps when new candle OpenTime is strictly greater than last
+                                    if (candle.OpenTime > subscription.LastOpenTime.Value)
                                     {
-                                        EnqueueWork(new BackgroundWorkItem
+                                        var expectedDuration = ParseIntervalToTimeSpan(interval);
+                                        var timeSinceLastCandle = candle.OpenTime - subscription.LastOpenTime.Value;
+                                        
+                                        // Gap threshold: require at least 2x the expected interval to reduce false positives
+                                        // This accounts for irregular update timing and minor network delays
+                                        var gapThreshold = TimeSpan.FromTicks(expectedDuration.Ticks * 2);
+                                        
+                                        if (timeSinceLastCandle >= gapThreshold)
                                         {
-                                            Type = BackgroundWorkType.BackfillGap,
-                                            Symbol = symbol,
-                                            Interval = interval,
-                                            GapStart = subscription.LastOpenTime.Value + expectedDuration,
-                                            GapEnd = candle.OpenTime
-                                        });
+                                            var backfillKey = GetSubscriptionKey(symbol, interval);
+                                            
+                                            // Check if backfill is already active to prevent re-queueing
+                                            if (_activeBackfills.ContainsKey(backfillKey))
+                                            {
+                                                _logger.LogTrace("Backfill already active for {Symbol} {Interval}, skipping gap enqueue", 
+                                                    symbol, interval);
+                                            }
+                                            else
+                                            {
+                                                // Cooldown: don't backfill more than once per 60 seconds per subscription
+                                                var now = DateTime.UtcNow;
+                                                var cooldownPeriod = TimeSpan.FromSeconds(60);
+                                                
+                                                if (!subscription.LastBackfillTime.HasValue || 
+                                                    (now - subscription.LastBackfillTime.Value) >= cooldownPeriod)
+                                                {
+                                                    _logger.LogDebug("Gap detected for {Symbol} {Interval}: {Gap} between {Last} and {Current}", 
+                                                        symbol, interval, timeSinceLastCandle, subscription.LastOpenTime.Value, candle.OpenTime);
+                                                    
+                                                    subscription.LastBackfillTime = now;
+                                                    
+                                                    EnqueueWork(new BackgroundWorkItem
+                                                    {
+                                                        Type = BackgroundWorkType.BackfillGap,
+                                                        Symbol = symbol,
+                                                        Interval = interval,
+                                                        GapStart = subscription.LastOpenTime.Value + expectedDuration,
+                                                        GapEnd = candle.OpenTime
+                                                    });
+                                                }
+                                                else
+                                                {
+                                                    _logger.LogTrace("Skipping gap backfill for {Symbol} {Interval} due to cooldown", symbol, interval);
+                                                }
+                                            }
+                                        }
+                                        
+                                        // Update last open time for next gap detection
+                                        subscription.LastOpenTime = candle.OpenTime;
+                                    }
+                                    else if (candle.OpenTime == subscription.LastOpenTime.Value)
+                                    {
+                                        // Same candle update - this is normal, just updating Close/Volume etc.
+                                        _logger.LogTrace("Received update for same candle at {OpenTime} for {Symbol} {Interval}", 
+                                            candle.OpenTime, symbol, interval);
+                                    }
+                                    else
+                                    {
+                                        // Out-of-order candle (older than last) - skip gap detection but allow ring buffer update
+                                        _logger.LogTrace("Received out-of-order candle at {OpenTime} (last was {LastOpenTime}) for {Symbol} {Interval}", 
+                                            candle.OpenTime, subscription.LastOpenTime.Value, symbol, interval);
                                     }
                                 }
-                                
-                                // Update last open time for next gap detection
-                                subscription.LastOpenTime = candle.OpenTime;
+                                else if (_chartingOptions.EnableGapDetection && !subscription.LastOpenTime.HasValue)
+                                {
+                                    // First candle after subscription - initialize LastOpenTime
+                                    subscription.LastOpenTime = candle.OpenTime;
+                                    _logger.LogDebug("Initialized LastOpenTime to {OpenTime} for {Symbol} {Interval}", 
+                                        candle.OpenTime, symbol, interval);
+                                }
+                                else
+                                {
+                                    // Gap detection disabled - still update LastOpenTime for consistency
+                                    subscription.LastOpenTime = candle.OpenTime;
+                                }
 
                                 // Enqueue persistence work
                                 if (_chartingOptions.EnablePersistence && _candleRepository != null)
@@ -517,6 +585,8 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
         {
             _logger.LogInformation("Initializing buffer for {Symbol} {Interval}", symbol, interval);
 
+            List<CandleDto> candleList = new();
+
             // Try to load from database first if persistence is enabled
             if (_chartingOptions.EnablePersistence && _candleRepository != null)
             {
@@ -526,34 +596,48 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
                     limit: _chartingOptions.BufferSize,
                     cancellationToken: CancellationToken.None);
                 
-                var dbCandleList = dbCandles.ToList();
-                if (dbCandleList.Count > 0)
+                candleList = dbCandles.ToList();
+                if (candleList.Count > 0)
                 {
-                    subscription.RingBuffer.AddRange(dbCandleList);
+                    subscription.RingBuffer.AddRange(candleList);
                     _logger.LogInformation("Loaded {Count} candles from database for {Symbol} {Interval}", 
-                        dbCandleList.Count, symbol, interval);
-                    return;
+                        candleList.Count, symbol, interval);
                 }
             }
 
             // Otherwise, fetch from Bitget REST API
-            var candles = await _candleService.GetCandlesAsync(
-                symbol,
-                interval,
-                limit: _chartingOptions.BufferSize,
-                cancellationToken: CancellationToken.None);
-
-            var candleList = candles.ToList();
-            if (candleList.Count > 0)
+            if (candleList.Count == 0)
             {
-                subscription.RingBuffer.AddRange(candleList);
-                _logger.LogInformation("Initialized buffer with {Count} candles for {Symbol} {Interval}", 
-                    candleList.Count, symbol, interval);
+                var candles = await _candleService.GetCandlesAsync(
+                    symbol,
+                    interval,
+                    limit: _chartingOptions.BufferSize,
+                    cancellationToken: CancellationToken.None);
 
-                // Persist to database if enabled
-                if (_chartingOptions.EnablePersistence && _candleRepository != null)
+                candleList = candles.ToList();
+                if (candleList.Count > 0)
                 {
-                    await _candleRepository.UpsertCandlesAsync(symbol, interval, candleList, CancellationToken.None);
+                    subscription.RingBuffer.AddRange(candleList);
+                    _logger.LogInformation("Initialized buffer with {Count} candles for {Symbol} {Interval}", 
+                        candleList.Count, symbol, interval);
+
+                    // Persist to database if enabled
+                    if (_chartingOptions.EnablePersistence && _candleRepository != null)
+                    {
+                        await _candleRepository.UpsertCandlesAsync(symbol, interval, candleList, CancellationToken.None);
+                    }
+                }
+            }
+
+            // Initialize LastOpenTime to the latest candle in buffer for gap detection
+            if (candleList.Count > 0 && _chartingOptions.EnableGapDetection)
+            {
+                var latestCandle = candleList.OrderByDescending(c => c.OpenTime).FirstOrDefault();
+                if (latestCandle != null)
+                {
+                    subscription.LastOpenTime = latestCandle.OpenTime;
+                    _logger.LogInformation("Initialized LastOpenTime to {OpenTime} for {Symbol} {Interval}", 
+                        latestCandle.OpenTime, symbol, interval);
                 }
             }
         }
