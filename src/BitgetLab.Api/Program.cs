@@ -12,6 +12,10 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.Configure<BitgetOptions>(
     builder.Configuration.GetSection(BitgetOptions.SectionName));
 
+// Configure Charting options
+builder.Services.Configure<ChartingOptions>(
+    builder.Configuration.GetSection(ChartingOptions.SectionName));
+
 // Register Bitget services
 builder.Services.AddSingleton<IBitgetClientFactory, BitgetClientFactory>();
 builder.Services.AddSingleton<IBitgetSocketClientFactory, BitgetSocketClientFactory>();
@@ -27,6 +31,7 @@ builder.Services.AddSingleton<IFuturesOrderHistoryService, FuturesOrderHistorySe
 builder.Services.AddSingleton<ICopyTradingService, CopyTradingService>();
 
 // Register charting services
+builder.Services.AddSingleton<ICandleRepository, PostgresCandleRepository>();
 builder.Services.AddSingleton<ICandleService, CandleService>();
 builder.Services.AddSingleton<IIndicatorService, IndicatorService>();
 

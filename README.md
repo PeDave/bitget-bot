@@ -314,9 +314,97 @@ Edit `src/BitgetLab.Api/appsettings.json`:
       "ApiSecret": "your_trade_api_secret",
       "Passphrase": "your_trade_passphrase"
     }
+  },
+  "ConnectionStrings": {
+    "PostgreSQL": "Host=localhost;Port=5432;Database=bitgetlab;Username=postgres;Password=yourpassword"
+  },
+  "Charting": {
+    "EnablePersistence": false,
+    "BufferSize": 500,
+    "EnableGapDetection": true
   }
 }
 ```
+
+### PostgreSQL Database Setup (Optional)
+
+The application supports optional PostgreSQL persistence for candle data. This feature enables:
+- Historical candle storage across restarts
+- Efficient querying of historical data
+- Automatic database fallback when fetching candles
+
+**Configuration Options**:
+- `EnablePersistence` (bool, default: false) - Enable/disable database persistence
+- `BufferSize` (int, default: 500) - Size of in-memory ring buffer per subscription
+- `EnableGapDetection` (bool, default: true) - Enable automatic gap detection and backfill
+
+**Setup Steps**:
+
+1. **Install PostgreSQL** (if not already installed):
+```bash
+# Ubuntu/Debian
+sudo apt update
+sudo apt install postgresql postgresql-contrib
+
+# macOS (using Homebrew)
+brew install postgresql@16
+brew services start postgresql@16
+```
+
+2. **Create Database**:
+```bash
+sudo -u postgres psql
+CREATE DATABASE bitgetlab;
+CREATE USER bitgetlab_user WITH ENCRYPTED PASSWORD 'your_secure_password';
+GRANT ALL PRIVILEGES ON DATABASE bitgetlab TO bitgetlab_user;
+\q
+```
+
+3. **Apply SQL Schema**:
+```bash
+# Navigate to project directory
+cd /path/to/bitget-bot
+
+# Apply the schema
+psql -U bitgetlab_user -d bitgetlab -f docs/sql/001_create_candles.sql
+```
+
+4. **Configure Connection String**:
+
+Edit `appsettings.json` or use environment variables:
+```json
+{
+  "ConnectionStrings": {
+    "PostgreSQL": "Host=localhost;Port=5432;Database=bitgetlab;Username=bitgetlab_user;Password=your_secure_password"
+  },
+  "Charting": {
+    "EnablePersistence": true,
+    "BufferSize": 500,
+    "EnableGapDetection": true
+  }
+}
+```
+
+Or use environment variable:
+```bash
+export ConnectionStrings__PostgreSQL="Host=localhost;Port=5432;Database=bitgetlab;Username=bitgetlab_user;Password=your_secure_password"
+```
+
+5. **Verify Connection**:
+
+The application will log connection status on startup. Check logs:
+```bash
+journalctl -u labot-api -f | grep -i postgres
+```
+
+**Behavior**:
+- When `EnablePersistence=false`: Candles are only stored in-memory (ring buffer)
+- When `EnablePersistence=true` and DB configured:
+  - WebSocket updates are persisted to database
+  - Gap backfills are persisted to database  
+  - `GET /api/bitget/market/candles` reads from database first, falls back to Bitget REST API
+  - Buffer initialization loads from database if available
+- When `EnablePersistence=true` but no DB connection: Application continues without persistence (logged as warning)
 
 ### Web Configuration
 
@@ -576,6 +664,64 @@ curl "http://localhost:3001/api/bitget/market/candles?symbol=ETHUSDT&interval=1d
 # Get monthly candles
 curl "http://localhost:3001/api/bitget/market/candles?symbol=BTCUSDT&interval=1mo"
 ```
+
+##### Get Candle Buffer (In-Memory Ring Buffer)
+**Endpoint**: `GET /api/bitget/market/candle-buffer`
+
+Retrieves candles from the in-memory ring buffer for an active WebSocket subscription. The buffer maintains the last N candles (default 500) in chronological order with automatic gap detection and backfill.
+
+**Query Parameters**:
+- `symbol` (string, required) - Trading symbol (e.g., "BTCUSDT")
+- `interval` (string, required) - Candle interval (e.g., 1m, 5m, 1h, 1d)
+- `limit` (int, optional, default: 500, max: 500) - Number of candles to return
+
+**Response** (when subscribed with data):
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "openTime": "2024-01-01T12:00:00Z",
+      "open": 45000.50,
+      "high": 45500.00,
+      "low": 44800.00,
+      "close": 45300.00,
+      "volume": 123.45,
+      "quoteVolume": 5567890.12
+    }
+  ],
+  "count": 100
+}
+```
+
+**Response** (when not subscribed or no data):
+```json
+{
+  "success": true,
+  "data": [],
+  "count": 0
+}
+```
+
+**Examples**:
+```bash
+# Get all candles from buffer for active subscription
+curl "http://localhost:3001/api/bitget/market/candle-buffer?symbol=BTCUSDT&interval=1m"
+
+# Get last 100 candles
+curl "http://localhost:3001/api/bitget/market/candle-buffer?symbol=BTCUSDT&interval=1m&limit=100"
+
+# Get candles for different intervals
+curl "http://localhost:3001/api/bitget/market/candle-buffer?symbol=ETHUSDT&interval=15m&limit=200"
+```
+
+**Features**:
+- **In-Memory Ring Buffer**: Maintains the last N candles (configurable, default 500) per subscription
+- **Automatic Gap Detection**: Detects missing candles between consecutive timestamps
+- **Automatic Backfill**: Fetches missing candles from Bitget REST API when gaps are detected
+- **Thread-Safe**: Concurrent read/write operations are safe
+- **Chronological Order**: Returns candles sorted by open time (oldest to newest)
+- **Optional PostgreSQL Persistence**: Can persist candles to database if enabled (see configuration below)
 
 ##### Get Latest Real-Time Candle
 **Endpoint**: `GET /api/bitget/market/latest-candle`

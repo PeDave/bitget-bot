@@ -1,7 +1,9 @@
 using BitgetLab.Core.Models;
+using BitgetLab.Core.Options;
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Bitget.Net.Interfaces.Clients;
 using Bitget.Net.Enums;
 using Bitget.Net.Objects.Models.V2;
@@ -18,6 +20,7 @@ public class CandleSubscription
     public string Interval { get; set; } = string.Empty;
     public DateTime SubscribedAt { get; set; }
     public CandleDto? LatestCandle { get; set; }
+    public CandleRingBuffer RingBuffer { get; set; } = null!;
 }
 
 /// <summary>
@@ -44,6 +47,11 @@ public interface IWebSocketSubscriptionService
     /// Get latest candle for a subscription
     /// </summary>
     CandleDto? GetLatestCandle(string symbol, string interval);
+
+    /// <summary>
+    /// Get candle buffer for a subscription
+    /// </summary>
+    List<CandleDto> GetCandleBuffer(string symbol, string interval, int limit);
 }
 
 public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscriptionService
@@ -51,15 +59,24 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
     private readonly ConcurrentDictionary<string, CandleSubscription> _subscriptions = new();
     private readonly ConcurrentDictionary<string, UpdateSubscription> _socketSubscriptions = new();
     private readonly IBitgetSocketClientFactory _socketClientFactory;
+    private readonly ICandleService _candleService;
+    private readonly ICandleRepository? _candleRepository;
+    private readonly ChartingOptions _chartingOptions;
     private readonly ILogger<WebSocketSubscriptionService> _logger;
     private readonly SemaphoreSlim _subscriptionLock = new(1, 1);
     private volatile IBitgetSocketClient? _socketClient;
 
     public WebSocketSubscriptionService(
         IBitgetSocketClientFactory socketClientFactory,
-        ILogger<WebSocketSubscriptionService> logger)
+        ICandleService candleService,
+        IOptions<ChartingOptions> chartingOptions,
+        ILogger<WebSocketSubscriptionService> logger,
+        ICandleRepository? candleRepository = null)
     {
         _socketClientFactory = socketClientFactory;
+        _candleService = candleService;
+        _candleRepository = candleRepository;
+        _chartingOptions = chartingOptions.Value;
         _logger = logger;
     }
 
@@ -156,7 +173,7 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
             var result = await _socketClient.SpotApiV2.SubscribeToKlineUpdatesAsync(
                 symbol,
                 streamInterval,
-                data =>
+                async data =>
                 {
                     try
                     {
@@ -179,8 +196,56 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
                             if (_subscriptions.TryGetValue(key, out var subscription))
                             {
                                 subscription.LatestCandle = candle;
+                                
+                                // Update ring buffer
+                                subscription.RingBuffer.AddOrUpdate(candle);
+                                
                                 _logger.LogDebug("Updated candle for {Symbol} {Interval}: Close={Close}", 
                                     symbol, interval, candle.Close);
+
+                                // Gap detection and backfill (async, don't block)
+                                if (_chartingOptions.EnableGapDetection)
+                                {
+                                    _ = Task.Run(async () =>
+                                    {
+                                        try
+                                        {
+                                            await DetectAndBackfillGapsAsync(symbol, interval, subscription);
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            _logger.LogError(ex, "Error in gap detection for {Symbol} {Interval}", symbol, interval);
+                                        }
+                                    }, CancellationToken.None).ContinueWith(t =>
+                                    {
+                                        if (t.IsFaulted && t.Exception != null)
+                                        {
+                                            _logger.LogError(t.Exception, "Unhandled error in gap detection task for {Symbol} {Interval}", symbol, interval);
+                                        }
+                                    }, TaskScheduler.Default);
+                                }
+
+                                // Persist to database if enabled
+                                if (_chartingOptions.EnablePersistence && _candleRepository != null)
+                                {
+                                    _ = Task.Run(async () =>
+                                    {
+                                        try
+                                        {
+                                            await _candleRepository.UpsertCandleAsync(symbol, interval, candle, CancellationToken.None);
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            _logger.LogError(ex, "Error persisting candle for {Symbol} {Interval}", symbol, interval);
+                                        }
+                                    }, CancellationToken.None).ContinueWith(t =>
+                                    {
+                                        if (t.IsFaulted && t.Exception != null)
+                                        {
+                                            _logger.LogError(t.Exception, "Unhandled error in persistence task for {Symbol} {Interval}", symbol, interval);
+                                        }
+                                    }, TaskScheduler.Default);
+                                }
                             }
                         }
                     }
@@ -198,13 +263,34 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
                 {
                     Symbol = symbol,
                     Interval = interval,
-                    SubscribedAt = DateTime.UtcNow
+                    SubscribedAt = DateTime.UtcNow,
+                    RingBuffer = new CandleRingBuffer(_chartingOptions.BufferSize)
                 };
 
                 _subscriptions.TryAdd(key, subscription);
                 _socketSubscriptions.TryAdd(key, result.Data);
                 
                 _logger.LogInformation("Successfully subscribed to {Symbol} {Interval}", symbol, interval);
+                
+                // Initialize buffer with recent candles (async, don't block)
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await InitializeBufferAsync(symbol, interval, subscription);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error initializing buffer for {Symbol} {Interval}", symbol, interval);
+                    }
+                }, CancellationToken.None).ContinueWith(t =>
+                {
+                    if (t.IsFaulted && t.Exception != null)
+                    {
+                        _logger.LogError(t.Exception, "Unhandled error in buffer initialization task for {Symbol} {Interval}", symbol, interval);
+                    }
+                }, TaskScheduler.Default);
+                
                 return true;
             }
             else
@@ -278,6 +364,122 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
         return _subscriptions.TryGetValue(key, out var subscription) 
             ? subscription.LatestCandle 
             : null;
+    }
+
+    public List<CandleDto> GetCandleBuffer(string symbol, string interval, int limit)
+    {
+        var key = GetSubscriptionKey(symbol, interval);
+        if (_subscriptions.TryGetValue(key, out var subscription))
+        {
+            return subscription.RingBuffer.GetLatest(limit);
+        }
+        return new List<CandleDto>();
+    }
+
+    private async Task InitializeBufferAsync(string symbol, string interval, CandleSubscription subscription)
+    {
+        try
+        {
+            _logger.LogInformation("Initializing buffer for {Symbol} {Interval}", symbol, interval);
+
+            // Try to load from database first if persistence is enabled
+            if (_chartingOptions.EnablePersistence && _candleRepository != null)
+            {
+                var dbCandles = await _candleRepository.GetCandlesAsync(
+                    symbol, 
+                    interval, 
+                    limit: _chartingOptions.BufferSize,
+                    cancellationToken: CancellationToken.None);
+                
+                var dbCandleList = dbCandles.ToList();
+                if (dbCandleList.Count > 0)
+                {
+                    subscription.RingBuffer.AddRange(dbCandleList);
+                    _logger.LogInformation("Loaded {Count} candles from database for {Symbol} {Interval}", 
+                        dbCandleList.Count, symbol, interval);
+                    return;
+                }
+            }
+
+            // Otherwise, fetch from Bitget REST API
+            var candles = await _candleService.GetCandlesAsync(
+                symbol,
+                interval,
+                limit: _chartingOptions.BufferSize,
+                cancellationToken: CancellationToken.None);
+
+            var candleList = candles.ToList();
+            if (candleList.Count > 0)
+            {
+                subscription.RingBuffer.AddRange(candleList);
+                _logger.LogInformation("Initialized buffer with {Count} candles for {Symbol} {Interval}", 
+                    candleList.Count, symbol, interval);
+
+                // Persist to database if enabled
+                if (_chartingOptions.EnablePersistence && _candleRepository != null)
+                {
+                    await _candleRepository.UpsertCandlesAsync(symbol, interval, candleList, CancellationToken.None);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to initialize buffer for {Symbol} {Interval}", symbol, interval);
+        }
+    }
+
+    private async Task DetectAndBackfillGapsAsync(string symbol, string interval, CandleSubscription subscription)
+    {
+        try
+        {
+            var gaps = subscription.RingBuffer.DetectGaps(interval);
+            
+            if (gaps.Count == 0)
+            {
+                return;
+            }
+
+            _logger.LogInformation("Detected {Count} gaps for {Symbol} {Interval}", gaps.Count, symbol, interval);
+
+            foreach (var gap in gaps)
+            {
+                try
+                {
+                    _logger.LogInformation("Backfilling gap for {Symbol} {Interval} from {Start} to {End}", 
+                        symbol, interval, gap.Start, gap.End);
+
+                    var backfillCandles = await _candleService.GetCandlesAsync(
+                        symbol,
+                        interval,
+                        startTime: gap.Start,
+                        endTime: gap.End,
+                        limit: 1000,
+                        cancellationToken: CancellationToken.None);
+
+                    var backfillList = backfillCandles.ToList();
+                    if (backfillList.Count > 0)
+                    {
+                        subscription.RingBuffer.AddRange(backfillList);
+                        _logger.LogInformation("Backfilled {Count} candles for {Symbol} {Interval}", 
+                            backfillList.Count, symbol, interval);
+
+                        // Persist backfilled candles if enabled
+                        if (_chartingOptions.EnablePersistence && _candleRepository != null)
+                        {
+                            await _candleRepository.UpsertCandlesAsync(symbol, interval, backfillList, CancellationToken.None);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to backfill gap for {Symbol} {Interval}", symbol, interval);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in gap detection for {Symbol} {Interval}", symbol, interval);
+        }
     }
 
     private string GetSubscriptionKey(string symbol, string interval)
