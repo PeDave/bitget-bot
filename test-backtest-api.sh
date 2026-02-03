@@ -114,6 +114,32 @@ else
 fi
 echo ""
 
+# Test 7: Test EMA crossover with different periods (edge case validation)
+echo -e "${YELLOW}Test 7: Testing EMA Crossover with fastPeriod=5, slowPeriod=15${NC}"
+EMA_EDGE_RESPONSE=$(curl -s -X POST "${API_BASE}/backtests/run" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "symbol": "BTCUSDT",
+    "interval": "1h",
+    "startTime": "2024-01-01T00:00:00Z",
+    "endTime": "2024-01-07T23:59:59Z",
+    "strategy": "ema_cross",
+    "parameters": {"fastPeriod": 5, "slowPeriod": 15},
+    "initialBalance": 10000,
+    "feeBps": 10,
+    "slippageBps": 5
+  }')
+
+echo "Response: $EMA_EDGE_RESPONSE"
+EMA_EDGE_BACKTEST_ID=$(echo $EMA_EDGE_RESPONSE | grep -o '"backtestId":"[^"]*"' | cut -d'"' -f4)
+
+if [ -z "$EMA_EDGE_BACKTEST_ID" ]; then
+  echo -e "${RED}✗ Failed to create EMA edge case backtest${NC}"
+else
+  echo -e "${GREEN}✓ EMA edge case backtest created with ID: $EMA_EDGE_BACKTEST_ID${NC}"
+fi
+echo ""
+
 # Summary
 echo "=========================================="
 echo -e "${GREEN}All tests completed!${NC}"
@@ -121,6 +147,7 @@ echo ""
 echo "Summary:"
 echo "- EMA Crossover backtest ID: $BACKTEST_ID"
 echo "- RSI backtest ID: $RSI_BACKTEST_ID"
+echo "- EMA edge case backtest ID: $EMA_EDGE_BACKTEST_ID"
 echo ""
 echo "Next steps:"
 echo "1. View backtest details in your browser:"
