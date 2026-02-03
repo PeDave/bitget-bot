@@ -1176,16 +1176,25 @@ The WebSocket subscription service includes automatic gap detection and backfill
 - **Strictly newer candles**: Only candles with OpenTime strictly greater than the last are considered for gap detection
 
 **Backfill protection**:
-- **Cooldown period**: 60 seconds between backfill attempts per subscription
+- **Per-subscription cooldown**: 60 seconds between backfill attempts per subscription
+- **Global rate limit**: Maximum 6 backfills per minute across all subscriptions to prevent API overload
 - **Active backfill guard**: Prevents re-queueing the same gap while a backfill is in progress
-- **Channel-based queue**: Backfill work is queued and processed sequentially to avoid storms
+- **Separate queues**: Backfill work uses a dedicated queue that never drops items, while persist work uses a droppable queue
+- **Range clamping**: Backfill ranges are automatically clamped to prevent excessive API calls:
+  - **1m, 5m**: max 6 hours
+  - **15m, 30m, 1h**: max 7 days
+  - **4h, 6h, 12h**: max 30 days
+  - **1d, 3d**: max 180 days
+  - **1w**: max 365 days
+  - **1mo**: max 365 days (gap detection may be disabled for monthly intervals)
 
 **Configuration** (in `appsettings.json`):
 ```json
 {
   "Charting": {
     "EnableGapDetection": true,
-    "BufferSize": 500
+    "BufferSize": 500,
+    "EnablePersistence": false
   }
 }
 ```
@@ -1193,7 +1202,9 @@ The WebSocket subscription service includes automatic gap detection and backfill
 **Logging**:
 - Gap detection events: `Debug` level
 - Backfill start/end: `Information` level
-- Skip reasons (cooldown, already active): `Trace` level
+- Range clamping warnings: `Warning` level
+- Skip reasons (cooldown, already active, rate limit): `Trace`/`Warning` level
+- Queue metrics: Logged every 30 seconds at `Debug` level (persist queue depth, backfill queue depth)
 
 ## 🤝 Contributing
 

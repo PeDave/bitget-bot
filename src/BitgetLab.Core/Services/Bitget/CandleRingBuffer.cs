@@ -225,23 +225,6 @@ public class CandleRingBuffer
 
     private TimeSpan ParseIntervalToTimeSpan(string interval)
     {
-        return interval.ToLowerInvariant() switch
-        {
-            "1m" => TimeSpan.FromMinutes(1),
-            "5m" => TimeSpan.FromMinutes(5),
-            "15m" => TimeSpan.FromMinutes(15),
-            "30m" => TimeSpan.FromMinutes(30),
-            "1h" => TimeSpan.FromHours(1),
-            "4h" => TimeSpan.FromHours(4),
-            "6h" => TimeSpan.FromHours(6),
-            "12h" => TimeSpan.FromHours(12),
-            "1d" => TimeSpan.FromDays(1),
-            "3d" => TimeSpan.FromDays(3),
-            "1w" => TimeSpan.FromDays(7),
-            // Note: Using 30 days as approximation for monthly intervals
-            // This is acceptable for gap detection as it's used to identify significant gaps
-            "1mo" or "1month" => TimeSpan.FromDays(30),
-            _ => TimeSpan.FromMinutes(1) // Default to 1 minute
-        };
+        return IntervalHelper.ParseIntervalToTimeSpan(interval);
     }
 }
