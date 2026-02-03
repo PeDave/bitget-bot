@@ -974,6 +974,62 @@ public class BitgetController : ControllerBase
         }
     }
 
+    [HttpGet("market/latest-candle")]
+    public IActionResult GetLatestCandle(
+        [FromQuery] string symbol,
+        [FromQuery] string interval)
+    {
+        if (string.IsNullOrWhiteSpace(symbol))
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Symbol parameter is required"
+            });
+        }
+
+        if (string.IsNullOrWhiteSpace(interval))
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Interval parameter is required"
+            });
+        }
+
+        try
+        {
+            var candle = _subscriptionService.GetLatestCandle(symbol, interval);
+            
+            if (candle != null)
+            {
+                return Ok(new
+                {
+                    success = true,
+                    data = new[] { candle },
+                    count = 1
+                });
+            }
+
+            return Ok(new
+            {
+                success = true,
+                data = Array.Empty<CandleDto>(),
+                count = 0
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get latest candle for {Symbol} {Interval}", symbol, interval);
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
+    }
+
     [HttpGet("market/indicators")]
     public async Task<IActionResult> GetIndicators(
         [FromQuery] string symbol,

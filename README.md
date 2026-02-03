@@ -525,7 +525,156 @@ Retrieves total account valuation across all account types (spot, p2p, futures, 
 curl http://localhost:3001/api/bitget/account/valuation
 ```
 
-#### 3. Spot Order History and Trades
+#### 3. Charting and Real-Time Data
+
+##### Get Historical Candles
+**Endpoint**: `GET /api/bitget/market/candles`
+
+Retrieves historical OHLCV (Open, High, Low, Close, Volume) candle data for a trading symbol.
+
+**Query Parameters**:
+- `symbol` (string, required) - Trading symbol (e.g., "BTCUSDT")
+- `interval` (string, required) - Candle interval (see supported intervals below)
+- `startTime` (DateTime, optional) - Start time for filtering
+- `endTime` (DateTime, optional) - End time for filtering
+- `limit` (int, default: 100, max: 1000) - Number of candles to retrieve
+
+**Supported Intervals**:
+- `1m`, `5m`, `15m`, `30m` - Minutes
+- `1h`, `4h`, `6h`, `12h` - Hours
+- `1d`, `3d` - Days
+- `1w` - Week
+- `1mo`, `1month` - Month
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "openTime": "2024-01-01T12:00:00Z",
+      "open": 45000.50,
+      "high": 45500.00,
+      "low": 44800.00,
+      "close": 45300.00,
+      "volume": 123.45,
+      "quoteVolume": 5567890.12
+    }
+  ],
+  "count": 100
+}
+```
+
+**Examples**:
+```bash
+# Get last 100 1-hour candles for BTC
+curl "http://localhost:3001/api/bitget/market/candles?symbol=BTCUSDT&interval=1h"
+
+# Get daily candles with limit
+curl "http://localhost:3001/api/bitget/market/candles?symbol=ETHUSDT&interval=1d&limit=30"
+
+# Get monthly candles
+curl "http://localhost:3001/api/bitget/market/candles?symbol=BTCUSDT&interval=1mo"
+```
+
+##### Get Latest Real-Time Candle
+**Endpoint**: `GET /api/bitget/market/latest-candle`
+
+Retrieves the latest real-time candle data from active WebSocket subscription. Returns empty if not subscribed or no data available.
+
+**Query Parameters**:
+- `symbol` (string, required) - Trading symbol (e.g., "BTCUSDT")
+- `interval` (string, required) - Candle interval (same as supported intervals above)
+
+**Response** (when data available):
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "openTime": "2024-01-01T12:00:00Z",
+      "open": 45000.50,
+      "high": 45500.00,
+      "low": 44800.00,
+      "close": 45300.00,
+      "volume": 123.45,
+      "quoteVolume": 5567890.12
+    }
+  ],
+  "count": 1
+}
+```
+
+**Response** (when not subscribed or no data):
+```json
+{
+  "success": true,
+  "data": [],
+  "count": 0
+}
+```
+
+**Examples**:
+```bash
+# Get latest candle for active subscription
+curl "http://localhost:3001/api/bitget/market/latest-candle?symbol=BTCUSDT&interval=1m"
+```
+
+##### Subscribe to Real-Time Candle Updates
+**Endpoint**: `POST /api/bitget/market/subscribe`
+
+Creates a WebSocket subscription for real-time candle updates. The subscription persists and updates automatically.
+
+**Request Body**:
+```json
+{
+  "symbol": "BTCUSDT",
+  "interval": "1m"
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "message": "Successfully subscribed to BTCUSDT candles"
+}
+```
+
+##### Unsubscribe from Candle Updates
+**Endpoint**: `POST /api/bitget/market/unsubscribe`
+
+Removes an active WebSocket subscription.
+
+**Request Body**:
+```json
+{
+  "symbol": "BTCUSDT",
+  "interval": "1m"
+}
+```
+
+##### Get Active Subscriptions
+**Endpoint**: `GET /api/bitget/market/subscriptions`
+
+Lists all active real-time candle subscriptions.
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "symbol": "BTCUSDT",
+      "interval": "1m",
+      "subscribedAt": "2024-01-01T12:00:00Z"
+    }
+  ],
+  "count": 1
+}
+```
+
+#### 4. Spot Order History and Trades
 
 ##### Get Spot Closed Orders
 **Endpoint**: `GET /api/bitget/spot/orders/closed`
@@ -646,7 +795,7 @@ curl http://localhost:3001/api/bitget/spot/trades
 curl "http://localhost:3001/api/bitget/spot/trades?orderId=1234567890"
 ```
 
-#### 4. Futures Order History and Trades
+#### 5. Futures Order History and Trades
 
 ##### Get Futures Closed Orders
 **Endpoint**: `GET /api/bitget/futures/orders/closed`
