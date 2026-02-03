@@ -1,0 +1,156 @@
+{
+  "name": "Backtest Report Workflow",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "start-node",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "backtest-report",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 400],
+      "webhookId": "backtest-report"
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:3001/api/bitget/backtests/run",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"symbol\": $json.symbol || \"BTCUSDT\",\n  \"interval\": $json.interval || \"1h\",\n  \"startTime\": $json.startTime || \"2026-01-01T00:00:00Z\",\n  \"endTime\": $json.endTime || \"2026-02-01T00:00:00Z\",\n  \"strategy\": $json.strategy || \"rsi\",\n  \"parameters\": $json.parameters || {\"period\": 14, \"oversoldThreshold\": 30, \"overboughtThreshold\": 70},\n  \"initialBalance\": $json.initialBalance || 1000,\n  \"feeBps\": $json.feeBps || 10,\n  \"slippageBps\": $json.slippageBps || 5\n} }}",
+        "options": {}
+      },
+      "id": "run-backtest",
+      "name": "Run Backtest",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "amount": 2,
+        "unit": "seconds"
+      },
+      "id": "wait-node",
+      "name": "Wait",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "url": "=http://localhost:3001/api/bitget/backtests/{{ $json.data.backtestId }}",
+        "method": "GET",
+        "options": {}
+      },
+      "id": "get-backtest-details",
+      "name": "Get Backtest Details",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "url": "=http://localhost:3001/api/bitget/backtests/{{ $json.data.id }}/trades",
+        "method": "GET",
+        "options": {}
+      },
+      "id": "get-backtest-trades",
+      "name": "Get Backtest Trades",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const backtestDetails = $input.first().json.data;\nconst allTrades = $input.all().flatMap(item => item.json.data || []);\n\n// Sort trades by PnL to find best and worst\nconst sortedByPnl = [...allTrades].sort((a, b) => (b.pnl || 0) - (a.pnl || 0));\nconst bestTrades = sortedByPnl.slice(0, 3);\nconst worstTrades = sortedByPnl.slice(-3).reverse();\n\n// Get first 3 and last 3 trades chronologically\nconst sortedByTime = [...allTrades].sort((a, b) => \n  new Date(a.entryTime) - new Date(b.entryTime)\n);\nconst firstTrades = sortedByTime.slice(0, 3);\nconst lastTrades = sortedByTime.slice(-3);\n\n// Build Markdown report\nconst summary = backtestDetails.summary || {};\nconst report = `# Backtest Report\\n\n## Summary\\n- **Backtest ID**: ${backtestDetails.id}\\n- **Symbol**: ${backtestDetails.symbol}\\n- **Strategy**: ${backtestDetails.strategy}\\n- **Interval**: ${backtestDetails.interval}\\n- **Period**: ${backtestDetails.startTime} to ${backtestDetails.endTime}\\n- **Status**: ${backtestDetails.status}\\n\\n## Performance Metrics\\n- **Total Trades**: ${summary.totalTrades || 0}\\n- **Win Rate**: ${(summary.winRate || 0).toFixed(2)}%\\n- **Net PnL**: $${(summary.netPnl || 0).toFixed(2)}\\n- **Return**: ${(summary.returnPercent || 0).toFixed(2)}%\\n- **Max Drawdown**: ${(summary.maxDrawdown || 0).toFixed(2)}%\\n- **Initial Balance**: $${(summary.initialBalance || 0).toFixed(2)}\\n- **Final Balance**: $${(summary.finalBalance || 0).toFixed(2)}\\n\\n## First 3 Trades\\n${firstTrades.map((t, i) => `\\n### Trade ${i + 1}\\n- Entry: ${t.entryTime} @ $${t.entryPrice}\\n- Exit: ${t.exitTime} @ $${t.exitPrice || 'N/A'}\\n- Side: ${t.side}\\n- PnL: $${(t.pnl || 0).toFixed(2)}\\n`).join('')}\\n\\n## Last 3 Trades\\n${lastTrades.map((t, i) => `\\n### Trade ${allTrades.length - 2 + i}\\n- Entry: ${t.entryTime} @ $${t.entryPrice}\\n- Exit: ${t.exitTime} @ $${t.exitPrice || 'N/A'}\\n- Side: ${t.side}\\n- PnL: $${(t.pnl || 0).toFixed(2)}\\n`).join('')}\\n\\n## Top 3 Winners\\n${bestTrades.map((t, i) => `\\n### Winner ${i + 1}\\n- Entry: ${t.entryTime} @ $${t.entryPrice}\\n- Exit: ${t.exitTime} @ $${t.exitPrice || 'N/A'}\\n- Side: ${t.side}\\n- PnL: $${(t.pnl || 0).toFixed(2)}\\n`).join('')}\\n\\n## Top 3 Losers\\n${worstTrades.map((t, i) => `\\n### Loser ${i + 1}\\n- Entry: ${t.entryTime} @ $${t.entryPrice}\\n- Exit: ${t.exitTime} @ $${t.exitPrice || 'N/A'}\\n- Side: ${t.side}\\n- PnL: $${(t.pnl || 0).toFixed(2)}\\n`).join('')}`;\n\nreturn {\n  json: {\n    backtestId: backtestDetails.id,\n    summary: summary,\n    report: report,\n    tradeCount: allTrades.length,\n    backtestDetails: backtestDetails,\n    trades: {\n      first: firstTrades,\n      last: lastTrades,\n      best: bestTrades,\n      worst: worstTrades\n    }\n  }\n};"
+      },
+      "id": "format-report",
+      "name": "Format Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 300]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Run Backtest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Run Backtest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Backtest": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Get Backtest Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Backtest Details": {
+      "main": [
+        [
+          {
+            "node": "Get Backtest Trades",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Backtest Trades": {
+      "main": [
+        [
+          {
+            "node": "Format Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {}
+}
