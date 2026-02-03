@@ -314,9 +314,66 @@ Edit `src/BitgetLab.Api/appsettings.json`:
       "ApiSecret": "your_trade_api_secret",
       "Passphrase": "your_trade_passphrase"
     }
+  },
+  "ConnectionStrings": {
+    "Postgres": "Host=localhost;Database=bitgetlab;Username=bitgetlab_user;Password=your_password"
   }
 }
 ```
+
+### PostgreSQL Database Setup (Optional)
+
+PostgreSQL is optional but recommended for persistent candle data storage.
+
+**1. Install PostgreSQL** (if not already installed):
+```bash
+# Ubuntu/Debian
+sudo apt update
+sudo apt install postgresql postgresql-contrib
+
+# Start PostgreSQL service
+sudo systemctl start postgresql
+sudo systemctl enable postgresql
+```
+
+**2. Create Database and User**:
+```bash
+# Connect to PostgreSQL
+sudo -u postgres psql
+
+# Create database and user
+CREATE DATABASE bitgetlab;
+CREATE USER bitgetlab_user WITH ENCRYPTED PASSWORD 'your_password';
+GRANT ALL PRIVILEGES ON DATABASE bitgetlab TO bitgetlab_user;
+\q
+```
+
+**3. Run Migration Script**:
+```bash
+# Run the SQL migration to create the candles table
+psql -h localhost -U bitgetlab_user -d bitgetlab -f docs/sql/001_create_candles.sql
+```
+
+**4. Configure Connection String**:
+
+Add to `appsettings.json`:
+```json
+{
+  "ConnectionStrings": {
+    "Postgres": "Host=localhost;Database=bitgetlab;Username=bitgetlab_user;Password=your_password"
+  }
+}
+```
+
+Or use environment variable:
+```bash
+export ConnectionStrings__Postgres="Host=localhost;Database=bitgetlab;Username=bitgetlab_user;Password=your_password"
+```
+
+**Features**:
+- Automatic UPSERT on WebSocket candle updates
+- Gap detection and backfill with database persistence
+- Query historical candles via `/api/bitget/market/candles/db` endpoint
 
 ### Web Configuration
 
@@ -673,6 +730,66 @@ Lists all active real-time candle subscriptions.
   "count": 1
 }
 ```
+
+##### Get Candle Buffer (Ring Buffer)
+**Endpoint**: `GET /api/bitget/market/candle-buffer`
+
+Retrieves candles from the in-memory ring buffer for an active subscription. The buffer stores the last 500 candles per subscription.
+
+**Query Parameters**:
+- `symbol` (string, required) - Trading symbol (e.g., "BTCUSDT")
+- `interval` (string, required) - Candle interval (e.g., "1m", "1h")
+- `limit` (int, default: 500, max: 500) - Number of most recent candles to return
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "openTime": "2024-01-01T12:00:00Z",
+      "open": 42000.50,
+      "high": 42100.00,
+      "low": 41900.00,
+      "close": 42050.00,
+      "volume": 123.45,
+      "quoteVolume": 5190000.00
+    }
+  ],
+  "count": 500
+}
+```
+
+**Examples**:
+```bash
+# Get last 100 candles from buffer
+curl "http://localhost:3001/api/bitget/market/candle-buffer?symbol=BTCUSDT&interval=1m&limit=100"
+
+# Get all candles in buffer (up to 500)
+curl "http://localhost:3001/api/bitget/market/candle-buffer?symbol=BTCUSDT&interval=1h"
+```
+
+**Note**: This endpoint only works for symbols with active subscriptions. Subscribe first using `/api/bitget/market/subscribe`.
+
+##### Get Candles from Database
+**Endpoint**: `GET /api/bitget/market/candles/db`
+
+Retrieves historical candles from PostgreSQL database (if configured). Same parameters and response format as `/api/bitget/market/candles`.
+
+**Query Parameters**:
+- `symbol` (string, required) - Trading symbol
+- `interval` (string, required) - Candle interval
+- `startTime` (DateTime, optional) - Filter start time
+- `endTime` (DateTime, optional) - Filter end time
+- `limit` (int, default: 100) - Number of candles
+
+**Examples**:
+```bash
+# Get candles from database
+curl "http://localhost:3001/api/bitget/market/candles/db?symbol=BTCUSDT&interval=1m&limit=100"
+```
+
+**Note**: Returns empty data if PostgreSQL is not configured. See PostgreSQL setup below.
 
 #### 4. Spot Order History and Trades
 

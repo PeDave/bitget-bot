@@ -22,6 +22,7 @@ public class BitgetController : ControllerBase
     private readonly ICandleService _candleService;
     private readonly IIndicatorService _indicatorService;
     private readonly IWebSocketSubscriptionService _subscriptionService;
+    private readonly ICandleRepository _candleRepository;
     private readonly ILogger<BitgetController> _logger;
 
     public BitgetController(
@@ -39,6 +40,7 @@ public class BitgetController : ControllerBase
         ICandleService candleService,
         IIndicatorService indicatorService,
         IWebSocketSubscriptionService subscriptionService,
+        ICandleRepository candleRepository,
         ILogger<BitgetController> logger)
     {
         _marketDataService = marketDataService;
@@ -55,6 +57,7 @@ public class BitgetController : ControllerBase
         _candleService = candleService;
         _indicatorService = indicatorService;
         _subscriptionService = subscriptionService;
+        _candleRepository = candleRepository;
         _logger = logger;
     }
 
@@ -1021,6 +1024,111 @@ public class BitgetController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to get latest candle for {Symbol} {Interval}", symbol, interval);
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
+    }
+
+    [HttpGet("market/candle-buffer")]
+    public IActionResult GetCandleBuffer(
+        [FromQuery] string symbol,
+        [FromQuery] string interval,
+        [FromQuery] int limit = 500)
+    {
+        if (string.IsNullOrWhiteSpace(symbol))
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Symbol parameter is required"
+            });
+        }
+
+        if (string.IsNullOrWhiteSpace(interval))
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Interval parameter is required"
+            });
+        }
+
+        // Enforce max limit
+        if (limit > 500)
+        {
+            limit = 500;
+        }
+
+        try
+        {
+            var candles = _subscriptionService.GetCandleBuffer(symbol, interval, limit);
+            
+            return Ok(new
+            {
+                success = true,
+                data = candles,
+                count = candles.Count
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get candle buffer for {Symbol} {Interval}", symbol, interval);
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
+    }
+
+    [HttpGet("market/candles/db")]
+    public async Task<IActionResult> GetCandlesFromDb(
+        [FromQuery] string symbol,
+        [FromQuery] string interval,
+        [FromQuery] DateTime? startTime = null,
+        [FromQuery] DateTime? endTime = null,
+        [FromQuery] int limit = 100,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(symbol))
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Symbol parameter is required"
+            });
+        }
+
+        if (string.IsNullOrWhiteSpace(interval))
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Interval parameter is required"
+            });
+        }
+
+        try
+        {
+            var candles = await _candleRepository.GetCandlesAsync(
+                symbol, interval, startTime, endTime, limit, cancellationToken);
+            var candleList = candles.ToList();
+
+            return Ok(new
+            {
+                success = true,
+                data = candleList,
+                count = candleList.Count
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get candles from database for {Symbol}", symbol);
             return StatusCode(500, new
             {
                 success = false,

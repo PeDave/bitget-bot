@@ -18,6 +18,7 @@ public class CandleSubscription
     public string Interval { get; set; } = string.Empty;
     public DateTime SubscribedAt { get; set; }
     public CandleDto? LatestCandle { get; set; }
+    public CandleBuffer Buffer { get; set; } = new CandleBuffer(500);
 }
 
 /// <summary>
@@ -44,6 +45,11 @@ public interface IWebSocketSubscriptionService
     /// Get latest candle for a subscription
     /// </summary>
     CandleDto? GetLatestCandle(string symbol, string interval);
+
+    /// <summary>
+    /// Get candle buffer for a subscription
+    /// </summary>
+    List<CandleDto> GetCandleBuffer(string symbol, string interval, int? limit = null);
 }
 
 public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscriptionService
@@ -51,15 +57,21 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
     private readonly ConcurrentDictionary<string, CandleSubscription> _subscriptions = new();
     private readonly ConcurrentDictionary<string, UpdateSubscription> _socketSubscriptions = new();
     private readonly IBitgetSocketClientFactory _socketClientFactory;
+    private readonly ICandleService _candleService;
+    private readonly ICandleRepository _candleRepository;
     private readonly ILogger<WebSocketSubscriptionService> _logger;
     private readonly SemaphoreSlim _subscriptionLock = new(1, 1);
     private volatile IBitgetSocketClient? _socketClient;
 
     public WebSocketSubscriptionService(
         IBitgetSocketClientFactory socketClientFactory,
+        ICandleService candleService,
+        ICandleRepository candleRepository,
         ILogger<WebSocketSubscriptionService> logger)
     {
         _socketClientFactory = socketClientFactory;
+        _candleService = candleService;
+        _candleRepository = candleRepository;
         _logger = logger;
     }
 
@@ -156,7 +168,7 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
             var result = await _socketClient.SpotApiV2.SubscribeToKlineUpdatesAsync(
                 symbol,
                 streamInterval,
-                data =>
+                async data =>
                 {
                     try
                     {
@@ -178,7 +190,18 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
                             // Update subscription with latest candle (thread-safe)
                             if (_subscriptions.TryGetValue(key, out var subscription))
                             {
+                                var lastCandle = subscription.LatestCandle;
+                                
+                                // Detect and backfill gaps
+                                await DetectAndBackfillGapAsync(symbol, interval, candle, lastCandle);
+                                
+                                // Update buffer and latest candle
+                                subscription.Buffer.AddOrUpdate(candle);
                                 subscription.LatestCandle = candle;
+                                
+                                // Persist to database
+                                await _candleRepository.UpsertCandleAsync(symbol, interval, candle);
+                                
                                 _logger.LogDebug("Updated candle for {Symbol} {Interval}: Close={Close}", 
                                     symbol, interval, candle.Close);
                             }
@@ -280,6 +303,16 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
             : null;
     }
 
+    public List<CandleDto> GetCandleBuffer(string symbol, string interval, int? limit = null)
+    {
+        var key = GetSubscriptionKey(symbol, interval);
+        if (_subscriptions.TryGetValue(key, out var subscription))
+        {
+            return subscription.Buffer.GetCandles(limit);
+        }
+        return new List<CandleDto>();
+    }
+
     private string GetSubscriptionKey(string symbol, string interval)
     {
         return $"{symbol.ToUpperInvariant()}:{interval.ToLowerInvariant()}";
@@ -303,5 +336,97 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
             "1mo" or "1month" => BitgetStreamKlineIntervalV2.OneMonth,
             _ => throw new ArgumentException($"Invalid interval: {interval}. Valid values: 1m, 5m, 15m, 30m, 1h, 4h, 6h, 12h, 1d, 3d, 1w, 1mo")
         };
+    }
+
+    /// <summary>
+    /// Get the duration of an interval in TimeSpan
+    /// </summary>
+    private TimeSpan GetIntervalDuration(string interval)
+    {
+        return interval.ToLowerInvariant() switch
+        {
+            "1m" => TimeSpan.FromMinutes(1),
+            "5m" => TimeSpan.FromMinutes(5),
+            "15m" => TimeSpan.FromMinutes(15),
+            "30m" => TimeSpan.FromMinutes(30),
+            "1h" => TimeSpan.FromHours(1),
+            "4h" => TimeSpan.FromHours(4),
+            "6h" => TimeSpan.FromHours(6),
+            "12h" => TimeSpan.FromHours(12),
+            "1d" => TimeSpan.FromDays(1),
+            "3d" => TimeSpan.FromDays(3),
+            "1w" => TimeSpan.FromDays(7),
+            "1mo" or "1month" => TimeSpan.FromDays(30),
+            _ => TimeSpan.FromMinutes(1)
+        };
+    }
+
+    /// <summary>
+    /// Detect and backfill gaps in candle data
+    /// </summary>
+    private async Task DetectAndBackfillGapAsync(string symbol, string interval, CandleDto newCandle, CandleDto? lastCandle)
+    {
+        if (lastCandle == null)
+        {
+            return;
+        }
+
+        var intervalDuration = GetIntervalDuration(interval);
+        var expectedNextOpenTime = lastCandle.OpenTime.Add(intervalDuration);
+        
+        // Check if there's a gap
+        if (newCandle.OpenTime > expectedNextOpenTime)
+        {
+            var gapStart = expectedNextOpenTime;
+            var gapEnd = newCandle.OpenTime;
+            var gapDuration = gapEnd - gapStart;
+            var estimatedMissingCandles = (int)(gapDuration.TotalSeconds / intervalDuration.TotalSeconds);
+
+            _logger.LogInformation(
+                "Gap detected for {Symbol} {Interval}: Last={LastTime}, New={NewTime}, Gap={GapMinutes}min, EstimatedMissing={Count}",
+                symbol, interval, lastCandle.OpenTime, newCandle.OpenTime, gapDuration.TotalMinutes, estimatedMissingCandles);
+
+            try
+            {
+                // Fetch missing candles from the REST API
+                var missingCandles = await _candleService.GetCandlesAsync(
+                    symbol, 
+                    interval, 
+                    startTime: gapStart, 
+                    endTime: gapEnd.AddSeconds(-1), // Don't include the new candle we already have
+                    limit: Math.Min(estimatedMissingCandles + 10, 1000)); // Add buffer, respect API limits
+
+                var missingCandlesList = missingCandles.ToList();
+                
+                if (missingCandlesList.Count > 0)
+                {
+                    _logger.LogInformation(
+                        "Backfilled {Count} candles for {Symbol} {Interval}",
+                        missingCandlesList.Count, symbol, interval);
+
+                    // Add to buffer
+                    var key = GetSubscriptionKey(symbol, interval);
+                    if (_subscriptions.TryGetValue(key, out var subscription))
+                    {
+                        subscription.Buffer.AddRange(missingCandlesList);
+                        
+                        // Persist to database if available
+                        await _candleRepository.UpsertCandlesAsync(symbol, interval, missingCandlesList);
+                    }
+                }
+                else
+                {
+                    _logger.LogWarning(
+                        "No candles returned from backfill for {Symbol} {Interval} (gap: {GapStart} to {GapEnd})",
+                        symbol, interval, gapStart, gapEnd);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, 
+                    "Failed to backfill gap for {Symbol} {Interval} (gap: {GapStart} to {GapEnd})",
+                    symbol, interval, gapStart, gapEnd);
+            }
+        }
     }
 }

@@ -29,6 +29,7 @@ builder.Services.AddSingleton<ICopyTradingService, CopyTradingService>();
 // Register charting services
 builder.Services.AddSingleton<ICandleService, CandleService>();
 builder.Services.AddSingleton<IIndicatorService, IndicatorService>();
+builder.Services.AddSingleton<ICandleRepository, CandleRepository>();
 
 // Register WebSocketSubscriptionService as singleton and hosted service
 builder.Services.AddSingleton<WebSocketSubscriptionService>();
