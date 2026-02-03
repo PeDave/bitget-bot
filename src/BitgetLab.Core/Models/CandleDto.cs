@@ -25,3 +25,16 @@ public class CandleQueryParams
     public DateTime? EndTime { get; set; }
     public int? Limit { get; set; }
 }
+
+/// <summary>
+/// Statistics for candle data in database
+/// </summary>
+public class CandleStatsDto
+{
+    public bool DbEnabled { get; set; }
+    public bool DbAvailable { get; set; }
+    public int Count { get; set; }
+    public DateTime? MinOpenTime { get; set; }
+    public DateTime? MaxOpenTime { get; set; }
+    public DateTime? LastUpdatedAt { get; set; }
+}

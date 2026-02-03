@@ -40,4 +40,12 @@ public interface ICandleRepository
     /// Check if database connection is available
     /// </summary>
     Task<bool> IsAvailableAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Get statistics for candles in database
+    /// </summary>
+    Task<CandleStatsDto> GetStatsAsync(
+        string symbol,
+        string interval,
+        CancellationToken cancellationToken = default);
 }
