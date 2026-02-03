@@ -585,7 +585,7 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
         {
             _logger.LogInformation("Initializing buffer for {Symbol} {Interval}", symbol, interval);
 
-            List<CandleDto> candleList = new();
+            var candleList = new List<CandleDto>();
 
             // Try to load from database first if persistence is enabled
             if (_chartingOptions.EnablePersistence && _candleRepository != null)
@@ -605,7 +605,7 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
                 }
             }
 
-            // Otherwise, fetch from Bitget REST API
+            // If no candles from DB, fetch from Bitget REST API
             if (candleList.Count == 0)
             {
                 var candles = await _candleService.GetCandlesAsync(
@@ -632,7 +632,7 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
             // Initialize LastOpenTime to the latest candle in buffer for gap detection
             if (candleList.Count > 0 && _chartingOptions.EnableGapDetection)
             {
-                var latestCandle = candleList.OrderByDescending(c => c.OpenTime).FirstOrDefault();
+                var latestCandle = candleList.MaxBy(c => c.OpenTime);
                 if (latestCandle != null)
                 {
                     subscription.LastOpenTime = latestCandle.OpenTime;
