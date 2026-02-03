@@ -75,13 +75,99 @@ public class CandleService : ICandleService
                 symbol, interval, startTime, endTime, limit, cancellationToken);
             
             var dbCandleList = dbCandles.ToList();
-            if (dbCandleList.Count > 0)
+            
+            // Check if DB results are sufficient
+            bool isSufficient = dbCandleList.Count >= limit;
+            
+            // If we have time constraints, check range coverage
+            if (isSufficient && startTime.HasValue && endTime.HasValue && dbCandleList.Count > 0)
+            {
+                var minDbTime = dbCandleList.Min(c => c.OpenTime);
+                var maxDbTime = dbCandleList.Max(c => c.OpenTime);
+                
+                // Check if DB covers the requested range
+                isSufficient = minDbTime <= startTime.Value && maxDbTime >= endTime.Value;
+            }
+            
+            // If DB data is sufficient, return it
+            if (isSufficient && dbCandleList.Count > 0)
             {
                 return dbCandleList;
+            }
+            
+            // DB results are insufficient - fetch from REST and merge
+            if (dbCandleList.Count > 0)
+            {
+                // Fetch from REST API
+                var restCandles = await FetchFromRestApiAsync(symbol, interval, startTime, endTime, limit, cancellationToken);
+                
+                // Merge DB and REST candles, dedupe by OpenTime
+                var mergedCandles = dbCandleList
+                    .Concat(restCandles)
+                    .GroupBy(c => c.OpenTime)
+                    .Select(g => g.First()) // Take first occurrence (prefer DB data)
+                    .OrderBy(c => c.OpenTime)
+                    .Take(limit)
+                    .ToList();
+                
+                // Persist REST-fetched candles to DB
+                var newCandles = restCandles
+                    .Where(rc => !dbCandleList.Any(dc => dc.OpenTime == rc.OpenTime))
+                    .ToList();
+                
+                if (newCandles.Count > 0)
+                {
+                    // Fire-and-forget persistence for REST API calls (acceptable here as these are
+                    // one-off operations, not real-time streams like WebSocket updates)
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await _candleRepository.UpsertCandlesAsync(symbol, interval, newCandles, CancellationToken.None);
+                        }
+                        catch
+                        {
+                            // Fire-and-forget, errors logged by repository
+                        }
+                    }, CancellationToken.None);
+                }
+                
+                return mergedCandles;
             }
         }
 
         // Otherwise fetch from Bitget REST API
+        var candles = await FetchFromRestApiAsync(symbol, interval, startTime, endTime, limit, cancellationToken);
+        
+        // Persist to database if enabled
+        if (_chartingOptions.EnablePersistence && _candleRepository != null && candles.Count > 0)
+        {
+            // Fire-and-forget persistence for REST API calls (acceptable here as these are
+            // one-off operations, not real-time streams like WebSocket updates)
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _candleRepository.UpsertCandlesAsync(symbol, interval, candles, CancellationToken.None);
+                }
+                catch
+                {
+                    // Fire-and-forget, errors logged by repository
+                }
+            }, CancellationToken.None);
+        }
+        
+        return candles;
+    }
+
+    private async Task<List<CandleDto>> FetchFromRestApiAsync(
+        string symbol,
+        string interval,
+        DateTime? startTime,
+        DateTime? endTime,
+        int limit,
+        CancellationToken cancellationToken)
+    {
         using var client = _clientFactory.CreateRestClient();
         
         // Get klines from Bitget Spot API
