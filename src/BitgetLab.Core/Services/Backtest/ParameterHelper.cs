@@ -31,11 +31,11 @@ public static class ParameterHelper
                 _ => defaultValue
             },
             int intValue => intValue,
-            long longValue => (int)longValue,
-            double doubleValue => (int)doubleValue,
-            decimal decimalValue => (int)decimalValue,
+            long longValue => checked((int)longValue),
+            double doubleValue => checked((int)doubleValue),
+            decimal decimalValue => checked((int)decimalValue),
             string stringValue => int.TryParse(stringValue, out var result) ? result : defaultValue,
-            _ => Convert.ToInt32(value)
+            _ => TryConvertToInt32(value, defaultValue)
         };
     }
 
@@ -64,10 +64,10 @@ public static class ParameterHelper
             decimal decimalValue => decimalValue,
             int intValue => intValue,
             long longValue => longValue,
-            double doubleValue => (decimal)doubleValue,
+            double doubleValue => TryConvertDoubleToDecimal(doubleValue, defaultValue),
             float floatValue => (decimal)floatValue,
             string stringValue => decimal.TryParse(stringValue, out var result) ? result : defaultValue,
-            _ => Convert.ToDecimal(value)
+            _ => TryConvertToDecimal(value, defaultValue)
         };
     }
 
@@ -127,7 +127,67 @@ public static class ParameterHelper
             bool boolValue => boolValue,
             string stringValue => bool.TryParse(stringValue, out var result) ? result : defaultValue,
             int intValue => intValue != 0,
-            _ => Convert.ToBoolean(value)
+            _ => TryConvertToBoolean(value, defaultValue)
         };
+    }
+
+    /// <summary>
+    /// Helper to safely convert value to int32 with fallback
+    /// </summary>
+    private static int TryConvertToInt32(object value, int defaultValue)
+    {
+        try
+        {
+            return Convert.ToInt32(value);
+        }
+        catch (Exception)
+        {
+            return defaultValue;
+        }
+    }
+
+    /// <summary>
+    /// Helper to safely convert value to decimal with fallback
+    /// </summary>
+    private static decimal TryConvertToDecimal(object value, decimal defaultValue)
+    {
+        try
+        {
+            return Convert.ToDecimal(value);
+        }
+        catch (Exception)
+        {
+            return defaultValue;
+        }
+    }
+
+    /// <summary>
+    /// Helper to safely convert double to decimal with fallback
+    /// </summary>
+    private static decimal TryConvertDoubleToDecimal(double value, decimal defaultValue)
+    {
+        try
+        {
+            return (decimal)value;
+        }
+        catch (OverflowException)
+        {
+            return defaultValue;
+        }
+    }
+
+    /// <summary>
+    /// Helper to safely convert value to boolean with fallback
+    /// </summary>
+    private static bool TryConvertToBoolean(object value, bool defaultValue)
+    {
+        try
+        {
+            return Convert.ToBoolean(value);
+        }
+        catch (Exception)
+        {
+            return defaultValue;
+        }
     }
 }
