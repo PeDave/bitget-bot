@@ -14,6 +14,8 @@ public class BitgetController : ControllerBase
     private readonly IAccountValuationService _accountValuationService;
     private readonly ISpotOrderQueryService _spotOrderQueryService;
     private readonly IFuturesOrderQueryService _futuresOrderQueryService;
+    private readonly ISpotOrderHistoryService _spotOrderHistoryService;
+    private readonly IFuturesOrderHistoryService _futuresOrderHistoryService;
     private readonly ICopyTradingService _copyTradingService;
     private readonly IBitgetClientFactory _clientFactory;
     private readonly ILogger<BitgetController> _logger;
@@ -26,6 +28,8 @@ public class BitgetController : ControllerBase
         IAccountValuationService accountValuationService,
         ISpotOrderQueryService spotOrderQueryService,
         IFuturesOrderQueryService futuresOrderQueryService,
+        ISpotOrderHistoryService spotOrderHistoryService,
+        IFuturesOrderHistoryService futuresOrderHistoryService,
         ICopyTradingService copyTradingService,
         IBitgetClientFactory clientFactory,
         ILogger<BitgetController> logger)
@@ -37,6 +41,8 @@ public class BitgetController : ControllerBase
         _accountValuationService = accountValuationService;
         _spotOrderQueryService = spotOrderQueryService;
         _futuresOrderQueryService = futuresOrderQueryService;
+        _spotOrderHistoryService = spotOrderHistoryService;
+        _futuresOrderHistoryService = futuresOrderHistoryService;
         _copyTradingService = copyTradingService;
         _clientFactory = clientFactory;
         _logger = logger;
@@ -511,6 +517,314 @@ public class BitgetController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to get copy trading current orders");
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
+    }
+
+    [HttpGet("spot/orders/closed")]
+    public async Task<IActionResult> GetSpotClosedOrders(
+        [FromQuery] string? symbol = null,
+        [FromQuery] string? orderId = null,
+        [FromQuery] DateTime? startTime = null,
+        [FromQuery] DateTime? endTime = null,
+        [FromQuery] string? idLessThan = null,
+        [FromQuery] int limit = 100,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var orders = await _spotOrderHistoryService.GetClosedOrdersAsync(
+                symbol, orderId, startTime, endTime, idLessThan, limit, cancellationToken);
+            var orderList = orders.ToList();
+            
+            return Ok(new
+            {
+                success = true,
+                data = orderList,
+                count = orderList.Count
+            });
+        }
+        catch (BitgetApiException ex)
+        {
+            _logger.LogError(ex, "Bitget API error while getting spot closed orders");
+            return StatusCode(502, new
+            {
+                success = false,
+                error = "Failed to retrieve spot closed orders from Bitget",
+                message = ex.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get spot closed orders");
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
+    }
+
+    [HttpGet("spot/orders/detail")]
+    public async Task<IActionResult> GetSpotOrderDetail(
+        [FromQuery] string symbol,
+        [FromQuery] string? orderId = null,
+        [FromQuery] string? clientOrderId = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(symbol))
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Symbol parameter is required"
+            });
+        }
+
+        if (string.IsNullOrWhiteSpace(orderId) && string.IsNullOrWhiteSpace(clientOrderId))
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Either orderId or clientOrderId parameter is required"
+            });
+        }
+
+        try
+        {
+            var order = await _spotOrderHistoryService.GetOrderDetailAsync(
+                symbol, orderId, clientOrderId, cancellationToken);
+            
+            return Ok(new
+            {
+                success = true,
+                data = new[] { order },
+                count = 1
+            });
+        }
+        catch (BitgetApiException ex)
+        {
+            _logger.LogError(ex, "Bitget API error while getting spot order detail");
+            return StatusCode(502, new
+            {
+                success = false,
+                error = "Failed to retrieve spot order detail from Bitget",
+                message = ex.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get spot order detail");
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
+    }
+
+    [HttpGet("spot/trades")]
+    public async Task<IActionResult> GetSpotTrades(
+        [FromQuery] string? symbol = null,
+        [FromQuery] string? orderId = null,
+        [FromQuery] DateTime? startTime = null,
+        [FromQuery] DateTime? endTime = null,
+        [FromQuery] string? idLessThan = null,
+        [FromQuery] int limit = 100,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var trades = await _spotOrderHistoryService.GetUserTradesAsync(
+                symbol, orderId, startTime, endTime, idLessThan, limit, cancellationToken);
+            var tradeList = trades.ToList();
+            
+            return Ok(new
+            {
+                success = true,
+                data = tradeList,
+                count = tradeList.Count
+            });
+        }
+        catch (BitgetApiException ex)
+        {
+            _logger.LogError(ex, "Bitget API error while getting spot trades");
+            return StatusCode(502, new
+            {
+                success = false,
+                error = "Failed to retrieve spot trades from Bitget",
+                message = ex.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get spot trades");
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
+    }
+
+    [HttpGet("futures/orders/closed")]
+    public async Task<IActionResult> GetFuturesClosedOrders(
+        [FromQuery] bool includeUsdt = true,
+        [FromQuery] bool includeUsdc = true,
+        [FromQuery] string? symbol = null,
+        [FromQuery] string? orderId = null,
+        [FromQuery] string? clientOrderId = null,
+        [FromQuery] DateTime? startTime = null,
+        [FromQuery] DateTime? endTime = null,
+        [FromQuery] string? idLessThan = null,
+        [FromQuery] int limit = 100,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var orders = await _futuresOrderHistoryService.GetClosedOrdersAsync(
+                includeUsdt, includeUsdc, symbol, orderId, clientOrderId, 
+                startTime, endTime, idLessThan, limit, cancellationToken);
+            var orderList = orders.ToList();
+            
+            return Ok(new
+            {
+                success = true,
+                data = orderList,
+                count = orderList.Count
+            });
+        }
+        catch (BitgetApiException ex)
+        {
+            _logger.LogError(ex, "Bitget API error while getting futures closed orders");
+            return StatusCode(502, new
+            {
+                success = false,
+                error = "Failed to retrieve futures closed orders from Bitget",
+                message = ex.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get futures closed orders");
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
+    }
+
+    [HttpGet("futures/orders/detail")]
+    public async Task<IActionResult> GetFuturesOrderDetail(
+        [FromQuery] bool includeUsdt = true,
+        [FromQuery] bool includeUsdc = true,
+        [FromQuery] string? productType = null,
+        [FromQuery] string? symbol = null,
+        [FromQuery] string? orderId = null,
+        [FromQuery] string? clientOrderId = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(symbol))
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Symbol parameter is required"
+            });
+        }
+
+        if (string.IsNullOrWhiteSpace(orderId) && string.IsNullOrWhiteSpace(clientOrderId))
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Either orderId or clientOrderId parameter is required"
+            });
+        }
+
+        try
+        {
+            var order = await _futuresOrderHistoryService.GetOrderDetailAsync(
+                includeUsdt, includeUsdc, productType, symbol, orderId, clientOrderId, cancellationToken);
+            
+            return Ok(new
+            {
+                success = true,
+                data = new[] { order },
+                count = 1
+            });
+        }
+        catch (BitgetApiException ex)
+        {
+            _logger.LogError(ex, "Bitget API error while getting futures order detail");
+            return StatusCode(502, new
+            {
+                success = false,
+                error = "Failed to retrieve futures order detail from Bitget",
+                message = ex.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get futures order detail");
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
+    }
+
+    [HttpGet("futures/trades")]
+    public async Task<IActionResult> GetFuturesTrades(
+        [FromQuery] bool includeUsdt = true,
+        [FromQuery] bool includeUsdc = true,
+        [FromQuery] string? symbol = null,
+        [FromQuery] string? orderId = null,
+        [FromQuery] DateTime? startTime = null,
+        [FromQuery] DateTime? endTime = null,
+        [FromQuery] string? idLessThan = null,
+        [FromQuery] int limit = 100,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var trades = await _futuresOrderHistoryService.GetUserTradesAsync(
+                includeUsdt, includeUsdc, symbol, orderId, 
+                startTime, endTime, idLessThan, limit, cancellationToken);
+            var tradeList = trades.ToList();
+            
+            return Ok(new
+            {
+                success = true,
+                data = tradeList,
+                count = tradeList.Count
+            });
+        }
+        catch (BitgetApiException ex)
+        {
+            _logger.LogError(ex, "Bitget API error while getting futures trades");
+            return StatusCode(502, new
+            {
+                success = false,
+                error = "Failed to retrieve futures trades from Bitget",
+                message = ex.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get futures trades");
             return StatusCode(500, new
             {
                 success = false,
