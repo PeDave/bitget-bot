@@ -168,9 +168,13 @@ public class BacktestEngine : IBacktestEngine
         var runningBalance = initialBalance;
         var peak = initialBalance;
         var maxDrawdown = 0m;
+        
+        // Use first trade entry time or current time if no trades
+        var startTime = trades.Count > 0 ? trades.OrderBy(t => t.EntryTime).First().EntryTime : DateTime.UtcNow;
+        
         var equityCurve = new List<EquityPoint>
         {
-            new EquityPoint { Time = DateTime.UtcNow, Balance = initialBalance }
+            new EquityPoint { Time = startTime, Balance = initialBalance }
         };
 
         foreach (var trade in trades.OrderBy(t => t.ExitTime))

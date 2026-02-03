@@ -207,28 +207,40 @@ public class PostgresBacktestRepository : IBacktestRepository
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
 
+        // Use a batch insert for better performance
         var sql = @"
             INSERT INTO backtest_trades (id, backtest_id, entry_time, exit_time, side, entry_price, exit_price, qty, pnl, metadata)
             VALUES (@id, @backtest_id, @entry_time, @exit_time, @side, @entry_price, @exit_price, @qty, @pnl, @metadata::jsonb)";
 
-        foreach (var trade in tradeList)
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        try
         {
-            await using var command = new NpgsqlCommand(sql, connection);
-            
-            var id = trade.Id == Guid.Empty ? Guid.NewGuid() : trade.Id;
-            
-            command.Parameters.AddWithValue("@id", id);
-            command.Parameters.AddWithValue("@backtest_id", trade.BacktestId);
-            command.Parameters.AddWithValue("@entry_time", trade.EntryTime);
-            command.Parameters.AddWithValue("@exit_time", trade.ExitTime.HasValue ? trade.ExitTime.Value : DBNull.Value);
-            command.Parameters.AddWithValue("@side", trade.Side);
-            command.Parameters.AddWithValue("@entry_price", trade.EntryPrice);
-            command.Parameters.AddWithValue("@exit_price", trade.ExitPrice.HasValue ? trade.ExitPrice.Value : DBNull.Value);
-            command.Parameters.AddWithValue("@qty", trade.Qty);
-            command.Parameters.AddWithValue("@pnl", trade.Pnl.HasValue ? trade.Pnl.Value : DBNull.Value);
-            command.Parameters.AddWithValue("@metadata", trade.Metadata != null ? JsonSerializer.Serialize(trade.Metadata) : "{}");
+            foreach (var trade in tradeList)
+            {
+                await using var command = new NpgsqlCommand(sql, connection, transaction);
+                
+                var id = trade.Id == Guid.Empty ? Guid.NewGuid() : trade.Id;
+                
+                command.Parameters.AddWithValue("@id", id);
+                command.Parameters.AddWithValue("@backtest_id", trade.BacktestId);
+                command.Parameters.AddWithValue("@entry_time", trade.EntryTime);
+                command.Parameters.AddWithValue("@exit_time", trade.ExitTime.HasValue ? trade.ExitTime.Value : DBNull.Value);
+                command.Parameters.AddWithValue("@side", trade.Side);
+                command.Parameters.AddWithValue("@entry_price", trade.EntryPrice);
+                command.Parameters.AddWithValue("@exit_price", trade.ExitPrice.HasValue ? trade.ExitPrice.Value : DBNull.Value);
+                command.Parameters.AddWithValue("@qty", trade.Qty);
+                command.Parameters.AddWithValue("@pnl", trade.Pnl.HasValue ? trade.Pnl.Value : DBNull.Value);
+                command.Parameters.AddWithValue("@metadata", trade.Metadata != null ? JsonSerializer.Serialize(trade.Metadata) : "{}");
 
-            await command.ExecuteNonQueryAsync(cancellationToken);
+                await command.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
         }
     }
 
