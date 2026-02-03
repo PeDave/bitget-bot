@@ -1,5 +1,4 @@
 using BitgetLab.Core.Models;
-using System.Text.Json;
 
 namespace BitgetLab.Core.Services.Backtest;
 
@@ -17,12 +16,12 @@ public class EmaCrossoverStrategy : IStrategy
     {
         if (parameters.TryGetValue("fastPeriod", out var fastPeriod))
         {
-            _fastPeriod = GetInt32(fastPeriod);
+            _fastPeriod = ParameterHelper.GetInt32(fastPeriod);
         }
         
         if (parameters.TryGetValue("slowPeriod", out var slowPeriod))
         {
-            _slowPeriod = GetInt32(slowPeriod);
+            _slowPeriod = ParameterHelper.GetInt32(slowPeriod);
         }
 
         if (_fastPeriod >= _slowPeriod)
@@ -34,15 +33,6 @@ public class EmaCrossoverStrategy : IStrategy
         {
             throw new ArgumentException("Periods must be at least 2");
         }
-    }
-
-    private static int GetInt32(object value)
-    {
-        if (value is JsonElement jsonElement)
-        {
-            return jsonElement.GetInt32();
-        }
-        return Convert.ToInt32(value);
     }
 
     public IEnumerable<TradingSignal> GenerateSignals(List<CandleDto> candles)
