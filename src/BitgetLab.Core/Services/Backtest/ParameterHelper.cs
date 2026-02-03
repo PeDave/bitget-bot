@@ -18,21 +18,28 @@ public static class ParameterHelper
             return defaultValue;
         }
 
-        return value switch
+        try
         {
-            JsonElement jsonElement => jsonElement.ValueKind switch
+            return value switch
             {
-                JsonValueKind.Number => jsonElement.GetInt32(),
-                JsonValueKind.String => int.TryParse(jsonElement.GetString(), out var result) ? result : defaultValue,
+                JsonElement jsonElement => jsonElement.ValueKind switch
+                {
+                    JsonValueKind.Number => jsonElement.GetInt32(),
+                    JsonValueKind.String => int.TryParse(jsonElement.GetString(), out var result) ? result : defaultValue,
+                    _ => defaultValue
+                },
+                int intValue => intValue,
+                long longValue when longValue >= int.MinValue && longValue <= int.MaxValue => (int)longValue,
+                double doubleValue when doubleValue >= int.MinValue && doubleValue <= int.MaxValue => (int)doubleValue,
+                decimal decimalValue when decimalValue >= int.MinValue && decimalValue <= int.MaxValue => (int)decimalValue,
+                string stringValue => int.TryParse(stringValue, out var result) ? result : defaultValue,
                 _ => defaultValue
-            },
-            int intValue => intValue,
-            long longValue => (int)longValue,
-            double doubleValue => (int)doubleValue,
-            decimal decimalValue => (int)decimalValue,
-            string stringValue => int.TryParse(stringValue, out var result) ? result : defaultValue,
-            _ => Convert.ToInt32(value)
-        };
+            };
+        }
+        catch
+        {
+            return defaultValue;
+        }
     }
 
     /// <summary>
@@ -45,22 +52,30 @@ public static class ParameterHelper
             return defaultValue;
         }
 
-        return value switch
+        try
         {
-            JsonElement jsonElement => jsonElement.ValueKind switch
+            return value switch
             {
-                JsonValueKind.Number => jsonElement.GetDecimal(),
-                JsonValueKind.String => decimal.TryParse(jsonElement.GetString(), out var result) ? result : defaultValue,
+                JsonElement jsonElement => jsonElement.ValueKind switch
+                {
+                    JsonValueKind.Number => jsonElement.GetDecimal(),
+                    JsonValueKind.String => decimal.TryParse(jsonElement.GetString(), out var result) ? result : defaultValue,
+                    _ => defaultValue
+                },
+                decimal decimalValue => decimalValue,
+                int intValue => intValue,
+                long longValue => longValue,
+                double doubleValue when !double.IsInfinity(doubleValue) && !double.IsNaN(doubleValue) 
+                    && doubleValue >= (double)decimal.MinValue && doubleValue <= (double)decimal.MaxValue => (decimal)doubleValue,
+                float floatValue when !float.IsInfinity(floatValue) && !float.IsNaN(floatValue) => (decimal)floatValue,
+                string stringValue => decimal.TryParse(stringValue, out var result) ? result : defaultValue,
                 _ => defaultValue
-            },
-            decimal decimalValue => decimalValue,
-            int intValue => intValue,
-            long longValue => longValue,
-            double doubleValue => (decimal)doubleValue,
-            float floatValue => (decimal)floatValue,
-            string stringValue => decimal.TryParse(stringValue, out var result) ? result : defaultValue,
-            _ => Convert.ToDecimal(value)
-        };
+            };
+        }
+        catch
+        {
+            return defaultValue;
+        }
     }
 
     /// <summary>
@@ -73,19 +88,26 @@ public static class ParameterHelper
             return defaultValue;
         }
 
-        return value switch
+        try
         {
-            JsonElement jsonElement => jsonElement.ValueKind switch
+            return value switch
             {
-                JsonValueKind.True => true,
-                JsonValueKind.False => false,
-                JsonValueKind.String => bool.TryParse(jsonElement.GetString(), out var result) ? result : defaultValue,
+                JsonElement jsonElement => jsonElement.ValueKind switch
+                {
+                    JsonValueKind.True => true,
+                    JsonValueKind.False => false,
+                    JsonValueKind.String => bool.TryParse(jsonElement.GetString(), out var result) ? result : defaultValue,
+                    _ => defaultValue
+                },
+                bool boolValue => boolValue,
+                string stringValue => bool.TryParse(stringValue, out var result) ? result : defaultValue,
                 _ => defaultValue
-            },
-            bool boolValue => boolValue,
-            string stringValue => bool.TryParse(stringValue, out var result) ? result : defaultValue,
-            _ => Convert.ToBoolean(value)
-        };
+            };
+        }
+        catch
+        {
+            return defaultValue;
+        }
     }
 
     /// <summary>
