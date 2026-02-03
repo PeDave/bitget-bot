@@ -632,13 +632,10 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
             // Initialize LastOpenTime to the latest candle in buffer for gap detection
             if (candleList.Count > 0 && _chartingOptions.EnableGapDetection)
             {
-                var latestCandle = candleList.MaxBy(c => c.OpenTime);
-                if (latestCandle != null)
-                {
-                    subscription.LastOpenTime = latestCandle.OpenTime;
-                    _logger.LogInformation("Initialized LastOpenTime to {OpenTime} for {Symbol} {Interval}", 
-                        latestCandle.OpenTime, symbol, interval);
-                }
+                var latestCandle = candleList.MaxBy(c => c.OpenTime)!;
+                subscription.LastOpenTime = latestCandle.OpenTime;
+                _logger.LogInformation("Initialized LastOpenTime to {OpenTime} for {Symbol} {Interval}", 
+                    latestCandle.OpenTime, symbol, interval);
             }
         }
         catch (Exception ex)
