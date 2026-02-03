@@ -1,4 +1,5 @@
 using BitgetLab.Core.Models;
+using System.Text.Json;
 
 namespace BitgetLab.Core.Services.Backtest;
 
@@ -17,17 +18,17 @@ public class RsiStrategy : IStrategy
     {
         if (parameters.TryGetValue("period", out var period))
         {
-            _period = Convert.ToInt32(period);
+            _period = GetInt32(period);
         }
         
         if (parameters.TryGetValue("oversoldThreshold", out var oversold))
         {
-            _oversoldThreshold = Convert.ToDecimal(oversold);
+            _oversoldThreshold = GetDecimal(oversold);
         }
         
         if (parameters.TryGetValue("overboughtThreshold", out var overbought))
         {
-            _overboughtThreshold = Convert.ToDecimal(overbought);
+            _overboughtThreshold = GetDecimal(overbought);
         }
 
         if (_period < 2)
@@ -44,6 +45,24 @@ public class RsiStrategy : IStrategy
         {
             throw new ArgumentException("Thresholds must be between 0 and 100");
         }
+    }
+
+    private static int GetInt32(object value)
+    {
+        if (value is JsonElement jsonElement)
+        {
+            return jsonElement.GetInt32();
+        }
+        return Convert.ToInt32(value);
+    }
+
+    private static decimal GetDecimal(object value)
+    {
+        if (value is JsonElement jsonElement)
+        {
+            return jsonElement.GetDecimal();
+        }
+        return Convert.ToDecimal(value);
     }
 
     public IEnumerable<TradingSignal> GenerateSignals(List<CandleDto> candles)
