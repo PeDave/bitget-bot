@@ -787,6 +787,117 @@ Creates a WebSocket subscription for real-time candle updates. The subscription 
 }
 ```
 
+##### Get Candle Statistics
+**Endpoint**: `GET /api/bitget/market/candles/stats`
+
+Retrieves database statistics for candle data, including availability, count, and time ranges. Useful for understanding the state of persisted candle data.
+
+**Query Parameters**:
+- `symbol` (string, required) - Trading symbol (e.g., "BTCUSDT")
+- `interval` (string, required) - Candle interval (e.g., 1m, 5m, 1h, 1d)
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "dbEnabled": true,
+    "dbAvailable": true,
+    "count": 5000,
+    "minOpenTime": "2024-01-01T00:00:00Z",
+    "maxOpenTime": "2024-01-15T23:59:00Z",
+    "lastUpdatedAt": "2024-01-15T23:59:30Z"
+  },
+  "count": 5000
+}
+```
+
+**Response Fields**:
+- `dbEnabled` - Whether database persistence is enabled in configuration
+- `dbAvailable` - Whether database connection is currently available
+- `count` - Number of candles stored in database
+- `minOpenTime` - Earliest candle open time in database
+- `maxOpenTime` - Latest candle open time in database
+- `lastUpdatedAt` - Last time any candle was updated in database
+
+**Examples**:
+```bash
+# Get stats for BTC 1-hour candles
+curl "http://localhost:3001/api/bitget/market/candles/stats?symbol=BTCUSDT&interval=1h"
+
+# Get stats for ETH daily candles
+curl "http://localhost:3001/api/bitget/market/candles/stats?symbol=ETHUSDT&interval=1d"
+```
+
+##### Manual Candle Backfill
+**Endpoint**: `POST /api/bitget/market/backfill`
+
+Triggers a manual backfill of historical candles for a specific time range. Fetched candles will be persisted to the database if persistence is enabled.
+
+**Request Body**:
+```json
+{
+  "symbol": "BTCUSDT",
+  "interval": "1h",
+  "startTime": "2024-01-01T00:00:00Z",
+  "endTime": "2024-01-07T23:59:59Z",
+  "limit": 1000
+}
+```
+
+**Request Fields**:
+- `symbol` (string, required) - Trading symbol
+- `interval` (string, required) - Candle interval
+- `startTime` (DateTime, required) - Start of backfill range
+- `endTime` (DateTime, required) - End of backfill range (must be after startTime)
+- `limit` (int, optional, default: 1000, max: 1000) - Maximum number of candles to fetch
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "symbol": "BTCUSDT",
+    "interval": "1h",
+    "startTime": "2024-01-01T00:00:00Z",
+    "endTime": "2024-01-07T23:59:59Z",
+    "candlesBackfilled": 168
+  },
+  "count": 168
+}
+```
+
+**Examples**:
+```bash
+# Backfill one week of hourly BTC candles
+curl -X POST "http://localhost:3001/api/bitget/market/backfill" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "symbol": "BTCUSDT",
+    "interval": "1h",
+    "startTime": "2024-01-01T00:00:00Z",
+    "endTime": "2024-01-07T23:59:59Z",
+    "limit": 1000
+  }'
+
+# Backfill 30 days of daily ETH candles
+curl -X POST "http://localhost:3001/api/bitget/market/backfill" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "symbol": "ETHUSDT",
+    "interval": "1d",
+    "startTime": "2023-12-01T00:00:00Z",
+    "endTime": "2023-12-31T23:59:59Z",
+    "limit": 31
+  }'
+```
+
+**Notes**:
+- If persistence is enabled, candles will be automatically saved to database
+- The endpoint uses smart merge logic to avoid duplicates
+- Large backfills are automatically chunked for optimal performance
+- The actual number of candles returned may be less than the limit if not all are available
+
 ##### Unsubscribe from Candle Updates
 **Endpoint**: `POST /api/bitget/market/unsubscribe`
 
