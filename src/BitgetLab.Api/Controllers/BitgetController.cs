@@ -1792,7 +1792,10 @@ public class BitgetController : ControllerBase
             }
 
             // Validate grid parameters
-            if (request.Grid == null)
+            if (request.Grid == null || 
+                request.Grid.Period == null || 
+                request.Grid.OversoldThreshold == null || 
+                request.Grid.OverboughtThreshold == null)
             {
                 return BadRequest(new
                 {
