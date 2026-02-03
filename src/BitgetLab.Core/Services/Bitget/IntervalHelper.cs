@@ -1,7 +1,7 @@
 namespace BitgetLab.Core.Services.Bitget;
 
 /// <summary>
-/// Helper class for centralized interval parsing and validation
+/// Helper class for centralized interval parsing
 /// </summary>
 public static class IntervalHelper
 {
