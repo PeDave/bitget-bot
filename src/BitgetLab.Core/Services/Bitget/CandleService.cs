@@ -103,8 +103,8 @@ public class CandleService : ICandleService
             "1d" => global::Bitget.Net.Enums.V2.KlineInterval.OneDay,
             "3d" => global::Bitget.Net.Enums.V2.KlineInterval.ThreeDays,
             "1w" => global::Bitget.Net.Enums.V2.KlineInterval.OneWeek,
-            "1M" => global::Bitget.Net.Enums.V2.KlineInterval.OneMonth,
-            _ => throw new ArgumentException($"Invalid interval: {interval}. Valid values: 1m, 5m, 15m, 30m, 1h, 4h, 6h, 12h, 1d, 3d, 1w, 1M")
+            "1mo" or "1month" => global::Bitget.Net.Enums.V2.KlineInterval.OneMonth,
+            _ => throw new ArgumentException($"Invalid interval: {interval}. Valid values: 1m, 5m, 15m, 30m, 1h, 4h, 6h, 12h, 1d, 3d, 1w, 1mo, 1month")
         };
     }
 }

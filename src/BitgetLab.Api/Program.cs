@@ -14,6 +14,7 @@ builder.Services.Configure<BitgetOptions>(
 
 // Register Bitget services
 builder.Services.AddSingleton<IBitgetClientFactory, BitgetClientFactory>();
+builder.Services.AddSingleton<IBitgetSocketClientFactory, BitgetSocketClientFactory>();
 builder.Services.AddSingleton<IMarketDataService, MarketDataService>();
 builder.Services.AddSingleton<ITradingService, TradingService>();
 builder.Services.AddSingleton<IAccountBalanceService, AccountBalanceService>();
@@ -28,7 +29,11 @@ builder.Services.AddSingleton<ICopyTradingService, CopyTradingService>();
 // Register charting services
 builder.Services.AddSingleton<ICandleService, CandleService>();
 builder.Services.AddSingleton<IIndicatorService, IndicatorService>();
-builder.Services.AddSingleton<IWebSocketSubscriptionService, WebSocketSubscriptionService>();
+
+// Register WebSocketSubscriptionService as singleton and hosted service
+builder.Services.AddSingleton<WebSocketSubscriptionService>();
+builder.Services.AddSingleton<IWebSocketSubscriptionService>(sp => sp.GetRequiredService<WebSocketSubscriptionService>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<WebSocketSubscriptionService>());
 
 // Register system services
 builder.Services.AddSingleton<ISystemMetricsService, SystemMetricsService>();
