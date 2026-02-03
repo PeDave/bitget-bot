@@ -32,31 +32,50 @@ public class EmaCrossoverStrategy : IStrategy
     {
         var signals = new List<TradingSignal>();
 
+        // Validate we have enough candles for the slow period (which is larger)
+        // We need at least slowPeriod + 1 candles to generate signals (period for initial EMA + 1 for comparison)
         if (candles.Count < _slowPeriod + 1)
         {
-            return signals;
+            throw new ArgumentException(
+                $"Insufficient candle data. Need at least {_slowPeriod + 1} candles for slowPeriod={_slowPeriod}, but only {candles.Count} provided.");
         }
 
         // Calculate EMAs
+        // fastEma will have (candles.Count - _fastPeriod + 1) values
+        // slowEma will have (candles.Count - _slowPeriod + 1) values
         var fastEma = ComputeEMA(candles, _fastPeriod);
         var slowEma = ComputeEMA(candles, _slowPeriod);
 
-        // Find crossovers
-        for (int i = 1; i < fastEma.Count; i++)
+        // To align the EMAs: slowEma[0] corresponds to candles[_slowPeriod - 1]
+        // We need to find the offset in fastEma that corresponds to the same candle
+        // fastEma[offset] should correspond to candles[_slowPeriod - 1]
+        // Since fastEma[0] corresponds to candles[_fastPeriod - 1], we have:
+        // offset = (_slowPeriod - 1) - (_fastPeriod - 1) = _slowPeriod - _fastPeriod
+        int fastEmaOffset = _slowPeriod - _fastPeriod;
+
+        // Find crossovers - iterate only up to slowEma.Count to avoid out of bounds
+        for (int i = 1; i < slowEma.Count; i++)
         {
-            var prevFast = fastEma[i - 1];
-            var currFast = fastEma[i];
+            // Get aligned EMA values
+            int fastIdx = fastEmaOffset + i;
+            int prevFastIdx = fastEmaOffset + i - 1;
+            
+            var prevFast = fastEma[prevFastIdx];
+            var currFast = fastEma[fastIdx];
             var prevSlow = slowEma[i - 1];
             var currSlow = slowEma[i];
+
+            // Calculate the actual candle index (slowEma[i] corresponds to candles[_slowPeriod - 1 + i])
+            int candleIdx = _slowPeriod - 1 + i;
 
             // Bullish crossover - fast crosses above slow
             if (prevFast <= prevSlow && currFast > currSlow)
             {
                 signals.Add(new TradingSignal
                 {
-                    Time = candles[_slowPeriod + i - 1].OpenTime,
+                    Time = candles[candleIdx].OpenTime,
                     Type = SignalType.Buy,
-                    Price = candles[_slowPeriod + i - 1].Close,
+                    Price = candles[candleIdx].Close,
                     Reason = $"Fast EMA({_fastPeriod}) crossed above Slow EMA({_slowPeriod})"
                 });
             }
@@ -65,9 +84,9 @@ public class EmaCrossoverStrategy : IStrategy
             {
                 signals.Add(new TradingSignal
                 {
-                    Time = candles[_slowPeriod + i - 1].OpenTime,
+                    Time = candles[candleIdx].OpenTime,
                     Type = SignalType.Sell,
-                    Price = candles[_slowPeriod + i - 1].Close,
+                    Price = candles[candleIdx].Close,
                     Reason = $"Fast EMA({_fastPeriod}) crossed below Slow EMA({_slowPeriod})"
                 });
             }
