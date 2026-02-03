@@ -48,7 +48,6 @@ public class GridParameterConverter : JsonConverter<Dictionary<string, List<obje
                         break;
                     }
 
-                    // Read array element and convert to appropriate type
                     // Skip null values - they should not be in the grid arrays
                     if (reader.TokenType == JsonTokenType.Null)
                     {
@@ -57,13 +56,7 @@ public class GridParameterConverter : JsonConverter<Dictionary<string, List<obje
 
                     object value = reader.TokenType switch
                     {
-                        // For numbers, preserve integer type if possible
-                        // Use TryGetInt64 for better range support while still favoring integers
-                        JsonTokenType.Number => reader.TryGetInt64(out long longValue) && 
-                                                longValue >= int.MinValue && 
-                                                longValue <= int.MaxValue
-                            ? (int)longValue
-                            : (object)reader.GetDecimal(),
+                        JsonTokenType.Number => ConvertNumber(ref reader),
                         JsonTokenType.String => reader.GetString()!,
                         JsonTokenType.True => true,
                         JsonTokenType.False => false,
@@ -82,6 +75,43 @@ public class GridParameterConverter : JsonConverter<Dictionary<string, List<obje
         }
 
         throw new JsonException("Unexpected end of JSON");
+    }
+
+    /// <summary>
+    /// Converts a JSON number to the most appropriate .NET numeric type.
+    /// Prefers int for integer values within int32 range, otherwise uses decimal.
+    /// Supports int64 range for integers and decimal range for decimals.
+    /// </summary>
+    private static object ConvertNumber(ref Utf8JsonReader reader)
+    {
+        // Try to get as int64 first
+        if (reader.TryGetInt64(out long longValue))
+        {
+            // If it fits in int32, return as int for better compatibility
+            if (longValue >= int.MinValue && longValue <= int.MaxValue)
+            {
+                return (int)longValue;
+            }
+            // Otherwise return as long
+            return longValue;
+        }
+
+        // If not an integer, try to get as decimal
+        if (reader.TryGetDecimal(out decimal decimalValue))
+        {
+            return decimalValue;
+        }
+
+        // If decimal also fails, try double as a fallback
+        // This handles edge cases like very large numbers or special values
+        try
+        {
+            return reader.GetDouble();
+        }
+        catch
+        {
+            throw new JsonException($"Unable to convert number value to a supported numeric type");
+        }
     }
 
     public override void Write(
