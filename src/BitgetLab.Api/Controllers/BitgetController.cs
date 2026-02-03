@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using BitgetLab.Core.Services.Bitget;
+using BitgetLab.Core.Services.Backtest;
 using BitgetLab.Core.Models;
 
 namespace BitgetLab.Api.Controllers;
@@ -23,6 +24,7 @@ public class BitgetController : ControllerBase
     private readonly IIndicatorService _indicatorService;
     private readonly IWebSocketSubscriptionService _subscriptionService;
     private readonly ICandleRepository? _candleRepository;
+    private readonly IBacktestService? _backtestService;
     private readonly ILogger<BitgetController> _logger;
 
     public BitgetController(
@@ -41,7 +43,8 @@ public class BitgetController : ControllerBase
         IIndicatorService indicatorService,
         IWebSocketSubscriptionService subscriptionService,
         ILogger<BitgetController> logger,
-        ICandleRepository? candleRepository = null)
+        ICandleRepository? candleRepository = null,
+        IBacktestService? backtestService = null)
     {
         _marketDataService = marketDataService;
         _tradingService = tradingService;
@@ -58,6 +61,7 @@ public class BitgetController : ControllerBase
         _indicatorService = indicatorService;
         _subscriptionService = subscriptionService;
         _candleRepository = candleRepository;
+        _backtestService = backtestService;
         _logger = logger;
     }
 
@@ -1573,5 +1577,191 @@ public class BitgetController : ControllerBase
         return errorMessage.Length > 200 
             ? errorMessage.Substring(0, 200) + "..." 
             : errorMessage;
+    }
+
+    // ============================================
+    // Backtest Endpoints
+    // ============================================
+
+    [HttpPost("backtests/run")]
+    public async Task<IActionResult> RunBacktest([FromBody] RunBacktestRequest request, CancellationToken cancellationToken)
+    {
+        if (_backtestService == null)
+        {
+            return StatusCode(503, new
+            {
+                success = false,
+                error = "Backtest service not available",
+                message = "Backtest functionality requires database configuration"
+            });
+        }
+
+        try
+        {
+            var backtest = await _backtestService.RunBacktestAsync(request, cancellationToken);
+            
+            return Ok(new
+            {
+                success = true,
+                data = new
+                {
+                    backtestId = backtest.Id,
+                    status = backtest.Status,
+                    summary = backtest.Summary
+                },
+                count = 1
+            });
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Invalid backtest request");
+            return BadRequest(new
+            {
+                success = false,
+                error = "Invalid request",
+                message = ex.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to run backtest");
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
+    }
+
+    [HttpGet("backtests/{id}")]
+    public async Task<IActionResult> GetBacktest(Guid id, CancellationToken cancellationToken)
+    {
+        if (_backtestService == null)
+        {
+            return StatusCode(503, new
+            {
+                success = false,
+                error = "Backtest service not available"
+            });
+        }
+
+        try
+        {
+            var backtest = await _backtestService.GetBacktestAsync(id, cancellationToken);
+            
+            if (backtest == null)
+            {
+                return NotFound(new
+                {
+                    success = false,
+                    error = "Backtest not found"
+                });
+            }
+
+            return Ok(new
+            {
+                success = true,
+                data = backtest,
+                count = 1
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get backtest {BacktestId}", id);
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
+    }
+
+    [HttpGet("backtests")]
+    public async Task<IActionResult> GetBacktests(
+        [FromQuery] string? symbol = null,
+        [FromQuery] string? strategy = null,
+        [FromQuery] string? status = null,
+        [FromQuery] int limit = 50,
+        CancellationToken cancellationToken = default)
+    {
+        if (_backtestService == null)
+        {
+            return StatusCode(503, new
+            {
+                success = false,
+                error = "Backtest service not available"
+            });
+        }
+
+        try
+        {
+            // Cap limit to prevent excessive queries
+            if (limit > 100)
+            {
+                limit = 100;
+            }
+            if (limit <= 0)
+            {
+                limit = 50;
+            }
+
+            var backtests = await _backtestService.GetBacktestsAsync(symbol, strategy, status, limit, cancellationToken);
+            var backtestList = backtests.ToList();
+
+            return Ok(new
+            {
+                success = true,
+                data = backtestList,
+                count = backtestList.Count
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get backtests");
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
+    }
+
+    [HttpGet("backtests/{id}/trades")]
+    public async Task<IActionResult> GetBacktestTrades(Guid id, CancellationToken cancellationToken)
+    {
+        if (_backtestService == null)
+        {
+            return StatusCode(503, new
+            {
+                success = false,
+                error = "Backtest service not available"
+            });
+        }
+
+        try
+        {
+            var trades = await _backtestService.GetBacktestTradesAsync(id, cancellationToken);
+            var tradeList = trades.ToList();
+
+            return Ok(new
+            {
+                success = true,
+                data = tradeList,
+                count = tradeList.Count
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get backtest trades for {BacktestId}", id);
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
     }
 }

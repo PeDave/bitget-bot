@@ -1,0 +1,276 @@
+{
+  "name": "Backtest Trading Strategy",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "start",
+      "name": "Start",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:3001/api/bitget/backtests/run",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "symbol",
+              "value": "={{ $json.symbol || \"BTCUSDT\" }}"
+            },
+            {
+              "name": "interval",
+              "value": "={{ $json.interval || \"1h\" }}"
+            },
+            {
+              "name": "startTime",
+              "value": "={{ $json.startTime || \"2024-01-01T00:00:00Z\" }}"
+            },
+            {
+              "name": "endTime",
+              "value": "={{ $json.endTime || \"2024-01-31T23:59:59Z\" }}"
+            },
+            {
+              "name": "strategy",
+              "value": "={{ $json.strategy || \"ema_cross\" }}"
+            },
+            {
+              "name": "parameters",
+              "value": "={{ $json.strategyParams || {\"fastPeriod\": 10, \"slowPeriod\": 20} }}"
+            },
+            {
+              "name": "initialBalance",
+              "value": "={{ $json.initialBalance || 10000 }}"
+            },
+            {
+              "name": "feeBps",
+              "value": "={{ $json.feeBps || 10 }}"
+            },
+            {
+              "name": "slippageBps",
+              "value": "={{ $json.slippageBps || 5 }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "run-backtest",
+      "name": "Run Backtest",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "amount": 3,
+        "unit": "seconds"
+      },
+      "id": "wait",
+      "name": "Wait",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [680, 300],
+      "webhookId": "backtest-wait"
+    },
+    {
+      "parameters": {
+        "url": "=http://localhost:3001/api/bitget/backtests/{{ $json.data.backtestId }}",
+        "method": "GET",
+        "options": {}
+      },
+      "id": "get-backtest",
+      "name": "Get Backtest Results",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.data.status }}",
+              "operation": "equals",
+              "value2": "completed"
+            }
+          ]
+        }
+      },
+      "id": "check-status",
+      "name": "Check Status",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "url": "=http://localhost:3001/api/bitget/backtests/{{ $json.data.id }}/trades",
+        "method": "GET",
+        "options": {}
+      },
+      "id": "get-trades",
+      "name": "Get Backtest Trades",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1340, 200]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "status",
+              "value": "={{ $json.data.status }}"
+            },
+            {
+              "name": "error",
+              "value": "={{ $json.data.error || \"Backtest not completed yet\" }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "format-error",
+      "name": "Format Error",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [1340, 400]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "backtestId",
+              "value": "={{ $json.data.id }}"
+            },
+            {
+              "name": "symbol",
+              "value": "={{ $json.data.symbol }}"
+            },
+            {
+              "name": "strategy",
+              "value": "={{ $json.data.strategy }}"
+            },
+            {
+              "name": "status",
+              "value": "={{ $json.data.status }}"
+            },
+            {
+              "name": "totalTrades",
+              "value": "={{ $json.data.summary.totalTrades }}"
+            },
+            {
+              "name": "winRate",
+              "value": "={{ $json.data.summary.winRate.toFixed(2) }}%"
+            },
+            {
+              "name": "netPnl",
+              "value": "={{ $json.data.summary.netPnl.toFixed(2) }}"
+            },
+            {
+              "name": "returnPercent",
+              "value": "={{ $json.data.summary.returnPercent.toFixed(2) }}%"
+            },
+            {
+              "name": "maxDrawdown",
+              "value": "={{ $json.data.summary.maxDrawdown.toFixed(2) }}%"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "format-summary",
+      "name": "Format Summary",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [1560, 200]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Run Backtest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Backtest": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Get Backtest Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Backtest Results": {
+      "main": [
+        [
+          {
+            "node": "Check Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Status": {
+      "main": [
+        [
+          {
+            "node": "Get Backtest Trades",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Backtest Trades": {
+      "main": [
+        [
+          {
+            "node": "Format Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2024-02-03T14:00:00.000Z",
+  "versionId": "1"
+}

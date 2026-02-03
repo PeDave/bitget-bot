@@ -1,6 +1,7 @@
 using BitgetLab.Api.Services;
 using BitgetLab.Core.Options;
 using BitgetLab.Core.Services.Bitget;
+using BitgetLab.Core.Services.Backtest;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -34,6 +35,11 @@ builder.Services.AddSingleton<ICopyTradingService, CopyTradingService>();
 builder.Services.AddSingleton<ICandleRepository, PostgresCandleRepository>();
 builder.Services.AddSingleton<ICandleService, CandleService>();
 builder.Services.AddSingleton<IIndicatorService, IndicatorService>();
+
+// Register backtest services
+builder.Services.AddSingleton<IBacktestRepository, PostgresBacktestRepository>();
+builder.Services.AddSingleton<IBacktestEngine, BacktestEngine>();
+builder.Services.AddSingleton<IBacktestService, BacktestService>();
 
 // Register WebSocketSubscriptionService as singleton and hosted service
 builder.Services.AddSingleton<WebSocketSubscriptionService>();
