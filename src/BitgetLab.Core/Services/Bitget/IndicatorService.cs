@@ -151,9 +151,15 @@ public class IndicatorService : IIndicatorService
             losses.Add(change < 0 ? -change : 0);
         }
 
+        // Ensure we have enough data for the period
+        if (gains.Count < period)
+        {
+            return results;
+        }
+
         // Calculate initial average gain/loss
-        var avgGain = gains.Take(period).Average();
-        var avgLoss = losses.Take(period).Average();
+        var avgGain = gains.Take(period).DefaultIfEmpty(0).Average();
+        var avgLoss = losses.Take(period).DefaultIfEmpty(0).Average();
 
         // Calculate RSI
         for (int i = period; i < gains.Count; i++)

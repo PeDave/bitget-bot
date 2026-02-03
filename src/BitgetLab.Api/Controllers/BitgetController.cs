@@ -1247,9 +1247,15 @@ public class BitgetController : ControllerBase
             return false;
 
         var lowerError = errorMessage.ToLowerInvariant();
+        
+        // Check for specific parameter-related error patterns
         return lowerError.Contains("parameter") || 
-               lowerError.Contains("invalid") || 
-               lowerError.Contains("error");
+               lowerError.Contains("param") ||
+               lowerError.Contains("invalid request") || 
+               lowerError.Contains("bad request") ||
+               lowerError.Contains("missing required") ||
+               lowerError.Contains("must be provided") ||
+               (lowerError.Contains("invalid") && (lowerError.Contains("orderid") || lowerError.Contains("clientorderid") || lowerError.Contains("symbol")));
     }
 
     private string SanitizeErrorMessage(string errorMessage)
