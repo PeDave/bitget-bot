@@ -66,7 +66,7 @@ public static class ParameterHelper
                 int intValue => intValue,
                 long longValue => longValue,
                 double doubleValue when !double.IsInfinity(doubleValue) && !double.IsNaN(doubleValue) 
-                    && doubleValue >= (double)decimal.MinValue && doubleValue <= (double)decimal.MaxValue => (decimal)doubleValue,
+                    && doubleValue >= -79228162514264337593543950335.0 && doubleValue <= 79228162514264337593543950335.0 => (decimal)doubleValue,
                 float floatValue when !float.IsInfinity(floatValue) && !float.IsNaN(floatValue) => (decimal)floatValue,
                 string stringValue => decimal.TryParse(stringValue, out var result) ? result : defaultValue,
                 _ => defaultValue
