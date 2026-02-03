@@ -33,7 +33,7 @@ public class EmaCrossoverStrategy : IStrategy
         var signals = new List<TradingSignal>();
 
         // Validate we have enough candles for the slow period (which is larger)
-        // We need at least slowPeriod + 1 candles to generate signals (period for initial EMA + 1 for comparison)
+        // We need at least slowPeriod + 1 candles to calculate at least 2 slow EMA values for crossover detection
         if (candles.Count < _slowPeriod + 1)
         {
             throw new ArgumentException(
@@ -41,8 +41,10 @@ public class EmaCrossoverStrategy : IStrategy
         }
 
         // Calculate EMAs
-        // fastEma will have (candles.Count - _fastPeriod + 1) values
-        // slowEma will have (candles.Count - _slowPeriod + 1) values
+        // ComputeEMA uses the first 'period' candles to compute the initial SMA, then calculates EMA for remaining candles
+        // This means: fastEma will have (candles.Count - _fastPeriod + 1) values
+        //             slowEma will have (candles.Count - _slowPeriod + 1) values
+        // For example, with 50 candles and periods 10/20: fastEma has 41 values, slowEma has 31 values
         var fastEma = ComputeEMA(candles, _fastPeriod);
         var slowEma = ComputeEMA(candles, _slowPeriod);
 
