@@ -9,8 +9,7 @@ public static class IntervalHelper
     /// Parse interval string to TimeSpan
     /// </summary>
     /// <param name="interval">Interval string (e.g., "1m", "5m", "1h", "1d")</param>
-    /// <returns>TimeSpan representing the interval duration</returns>
-    /// <exception cref="ArgumentException">Thrown when interval is invalid</exception>
+    /// <returns>TimeSpan representing the interval duration. Returns 1 minute for invalid intervals.</returns>
     public static TimeSpan ParseIntervalToTimeSpan(string interval)
     {
         return interval.ToLowerInvariant() switch
@@ -28,7 +27,7 @@ public static class IntervalHelper
             "1w" => TimeSpan.FromDays(7),
             // Note: Using 30 days as approximation for monthly intervals
             "1mo" or "1month" => TimeSpan.FromDays(30),
-            _ => throw new ArgumentException($"Invalid interval: {interval}. Valid values: 1m, 5m, 15m, 30m, 1h, 4h, 6h, 12h, 1d, 3d, 1w, 1mo, 1month")
+            _ => TimeSpan.FromMinutes(1) // Default to 1 minute for backward compatibility
         };
     }
 
