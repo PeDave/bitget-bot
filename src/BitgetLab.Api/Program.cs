@@ -28,10 +28,12 @@ builder.Services.AddSingleton<ICopyTradingService, CopyTradingService>();
 // Register charting services
 builder.Services.AddSingleton<ICandleService, CandleService>();
 builder.Services.AddSingleton<IIndicatorService, IndicatorService>();
-builder.Services.AddSingleton<IWebSocketSubscriptionService, WebSocketSubscriptionService>();
-// Register WebSocket subscription service as hosted service
-builder.Services.AddHostedService<WebSocketSubscriptionService>(sp => 
-    (WebSocketSubscriptionService)sp.GetRequiredService<IWebSocketSubscriptionService>());
+// Register WebSocket subscription service as singleton and hosted service
+builder.Services.AddSingleton<WebSocketSubscriptionService>();
+builder.Services.AddSingleton<IWebSocketSubscriptionService>(sp => 
+    sp.GetRequiredService<WebSocketSubscriptionService>());
+builder.Services.AddHostedService(sp => 
+    sp.GetRequiredService<WebSocketSubscriptionService>());
 
 // Register system services
 builder.Services.AddSingleton<ISystemMetricsService, SystemMetricsService>();

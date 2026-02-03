@@ -130,7 +130,6 @@ public class WebSocketSubscriptionService : IWebSocketSubscriptionService, IHost
             }
             
             _reconnectAttempts = 0;
-            await Task.CompletedTask;
         }
         catch (Exception ex)
         {
@@ -151,7 +150,7 @@ public class WebSocketSubscriptionService : IWebSocketSubscriptionService, IHost
             }
 
             _reconnectAttempts++;
-            var backoffSeconds = BaseBackoffSeconds * _reconnectAttempts;
+            var backoffSeconds = BaseBackoffSeconds * Math.Pow(2, _reconnectAttempts - 1);
             _logger.LogWarning("Attempting reconnect #{Attempt} after {Seconds} seconds", _reconnectAttempts, backoffSeconds);
             
             await Task.Delay(TimeSpan.FromSeconds(backoffSeconds));
@@ -231,31 +230,58 @@ public class WebSocketSubscriptionService : IWebSocketSubscriptionService, IHost
             throw new InvalidOperationException("Socket client is not initialized");
         }
 
-        var socketInterval = ParseIntervalToSocketEnum(interval);
-        var key = GetSubscriptionKey(symbol, interval);
-
-        var result = await _socketClient.SpotApiV2.SubscribeToKlineUpdatesAsync(
-            symbol,
-            socketInterval,
-            data => HandleKlineUpdate(symbol, interval, data));
-
-        if (!result.Success)
+        try
         {
-            throw new BitgetApiException($"Failed to subscribe to kline updates: {result.Error?.Message ?? "Unknown error"}");
+            var socketInterval = ParseIntervalToSocketEnum(interval);
+            var key = GetSubscriptionKey(symbol, interval);
+
+            _logger.LogInformation("Attempting to subscribe to {Symbol}:{Interval} (mapped to {SocketInterval})", 
+                symbol, interval, socketInterval);
+
+            var result = await _socketClient.SpotApiV2.SubscribeToKlineUpdatesAsync(
+                symbol,
+                socketInterval,
+                data => HandleKlineUpdate(symbol, interval, data));
+
+            if (!result.Success)
+            {
+                var errorMsg = result.Error?.Message ?? "No error message";
+                var errorCode = result.Error?.Code;
+                _logger.LogError("Failed to subscribe to kline updates for {Symbol}:{Interval}. Error: {Error}, Code: {Code}", 
+                    symbol, interval, errorMsg, errorCode);
+                throw new BitgetApiException($"Failed to subscribe to kline updates: {errorMsg}. Check logs for details.");
+            }
+
+            // Store the socket subscription for cleanup
+            _socketSubscriptions.TryAdd(key, result.Data);
+            
+            // Reset reconnect attempts on successful subscription
+            _reconnectAttempts = 0;
+            
+            // Handle connection lost event
+            result.Data.ConnectionLost += () =>
+            {
+                _logger.LogWarning("WebSocket connection lost for {Symbol}:{Interval}", symbol, interval);
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await HandleReconnectAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Reconnect failed for {Symbol}:{Interval}", symbol, interval);
+                    }
+                });
+            };
+
+            _logger.LogInformation("Successfully subscribed to {Symbol}:{Interval}", symbol, interval);
         }
-
-        // Store the socket subscription for cleanup
-        _socketSubscriptions.TryAdd(key, result.Data);
-        
-        // Reset reconnect attempts on successful subscription
-        _reconnectAttempts = 0;
-        
-        // Handle connection lost event
-        result.Data.ConnectionLost += async () =>
+        catch (Exception ex)
         {
-            _logger.LogWarning("WebSocket connection lost for {Symbol}:{Interval}", symbol, interval);
-            await HandleReconnectAsync();
-        };
+            _logger.LogError(ex, "Exception during subscription to {Symbol}:{Interval}", symbol, interval);
+            throw;
+        }
     }
 
     private void HandleKlineUpdate(string symbol, string interval, DataEvent<BitgetKlineUpdate[]> data)
