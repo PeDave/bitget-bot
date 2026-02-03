@@ -367,7 +367,7 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
                                         
                                         // Gap threshold: require at least 2x the expected interval to reduce false positives
                                         // This accounts for irregular update timing and minor network delays
-                                        var gapThreshold = TimeSpan.FromTicks(expectedDuration.Ticks * 2);
+                                        var gapThreshold = expectedDuration + expectedDuration;
                                         
                                         if (timeSinceLastCandle >= gapThreshold)
                                         {
@@ -632,10 +632,15 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
             // Initialize LastOpenTime to the latest candle in buffer for gap detection
             if (candleList.Count > 0 && _chartingOptions.EnableGapDetection)
             {
-                var latestCandle = candleList.MaxBy(c => c.OpenTime)!;
-                subscription.LastOpenTime = latestCandle.OpenTime;
-                _logger.LogInformation("Initialized LastOpenTime to {OpenTime} for {Symbol} {Interval}", 
-                    latestCandle.OpenTime, symbol, interval);
+                var latestCandle = candleList.MaxBy(c => c.OpenTime);
+                // MaxBy returns null only if source is empty, which is already checked above
+                // However, to be defensive against concurrent modifications, check again
+                if (latestCandle != null)
+                {
+                    subscription.LastOpenTime = latestCandle.OpenTime;
+                    _logger.LogInformation("Initialized LastOpenTime to {OpenTime} for {Symbol} {Interval}", 
+                        latestCandle.OpenTime, symbol, interval);
+                }
             }
         }
         catch (Exception ex)
