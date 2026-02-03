@@ -89,7 +89,10 @@ public class SweepBacktestRequest
     public DateTime StartTime { get; set; }
     public DateTime EndTime { get; set; }
     public string Strategy { get; set; } = string.Empty;
+    
+    [JsonConverter(typeof(GridParameterConverter))]
     public Dictionary<string, List<object>> Grid { get; set; } = new();
+    
     public decimal? FeeBps { get; set; }
     public decimal? SlippageBps { get; set; }
     public decimal? InitialBalance { get; set; }
