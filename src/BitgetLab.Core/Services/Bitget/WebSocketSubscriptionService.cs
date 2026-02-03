@@ -94,7 +94,15 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
     private readonly SemaphoreSlim _subscriptionLock = new(1, 1);
     private volatile IBitgetSocketClient? _socketClient;
     private readonly ConcurrentDictionary<string, byte> _activeBackfills = new(); // Track active backfills
-    private readonly Channel<BackgroundWorkItem> _workQueue;
+    
+    // Separate channels for different work types
+    private readonly Channel<BackgroundWorkItem> _persistQueue;
+    private readonly Channel<BackgroundWorkItem> _backfillQueue;
+    
+    // Global backfill rate limiting (max 6 per minute)
+    private readonly Queue<DateTime> _globalBackfillTimestamps = new();
+    private readonly object _rateLimitLock = new();
+    private const int MaxBackfillsPerMinute = 6;
 
     public WebSocketSubscriptionService(
         IBitgetSocketClientFactory socketClientFactory,
@@ -109,10 +117,17 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
         _chartingOptions = chartingOptions.Value;
         _logger = logger;
         
-        // Create bounded channel with capacity of 10000 work items
-        _workQueue = Channel.CreateBounded<BackgroundWorkItem>(new BoundedChannelOptions(10000)
+        // Create separate bounded channels for different work types
+        // Persist queue: can drop oldest items if full (data will be re-persisted)
+        _persistQueue = Channel.CreateBounded<BackgroundWorkItem>(new BoundedChannelOptions(5000)
         {
             FullMode = BoundedChannelFullMode.DropOldest
+        });
+        
+        // Backfill queue: never drop backfill work items
+        _backfillQueue = Channel.CreateBounded<BackgroundWorkItem>(new BoundedChannelOptions(5000)
+        {
+            FullMode = BoundedChannelFullMode.Wait // Block if full, ensuring backfills are not lost
         });
     }
 
@@ -126,26 +141,28 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
             _socketClient = _socketClientFactory.CreateSocketClient();
             _logger.LogInformation("WebSocket client initialized");
 
-            // Start background worker task
-            var workerTask = Task.Run(() => ProcessWorkQueueAsync(stoppingToken), stoppingToken);
+            // Start background worker tasks for both queues
+            var persistWorkerTask = Task.Run(() => ProcessPersistQueueAsync(stoppingToken), stoppingToken);
+            var backfillWorkerTask = Task.Run(() => ProcessBackfillQueueAsync(stoppingToken), stoppingToken);
 
             // Keep the service running and log metrics periodically
             while (!stoppingToken.IsCancellationRequested)
             {
                 await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
                 
-                // Log active subscriptions and queue depth
+                // Log active subscriptions and queue depths
                 var activeCount = _subscriptions.Count;
-                var queueCount = _workQueue.Reader.Count;
+                var persistQueueCount = _persistQueue.Reader.Count;
+                var backfillQueueCount = _backfillQueue.Reader.Count;
                 
-                if (activeCount > 0 || queueCount > 0)
+                if (activeCount > 0 || persistQueueCount > 0 || backfillQueueCount > 0)
                 {
-                    _logger.LogDebug("Active WebSocket subscriptions: {Count}, Queue depth: {QueueDepth}", 
-                        activeCount, queueCount);
+                    _logger.LogDebug("Active WebSocket subscriptions: {Count}, Persist queue: {PersistDepth}, Backfill queue: {BackfillDepth}", 
+                        activeCount, persistQueueCount, backfillQueueCount);
                 }
             }
             
-            await workerTask;
+            await Task.WhenAll(persistWorkerTask, backfillWorkerTask);
         }
         catch (OperationCanceledException)
         {
@@ -157,40 +174,51 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
         }
     }
 
-    private async Task ProcessWorkQueueAsync(CancellationToken cancellationToken)
+    private async Task ProcessPersistQueueAsync(CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Background work queue processor starting...");
+        _logger.LogInformation("Persist queue processor starting...");
         
-        await foreach (var workItem in _workQueue.Reader.ReadAllAsync(cancellationToken))
+        await foreach (var workItem in _persistQueue.Reader.ReadAllAsync(cancellationToken))
         {
             try
             {
-                switch (workItem.Type)
+                if (_chartingOptions.EnablePersistence && _candleRepository != null && workItem.Candles != null)
                 {
-                    case BackgroundWorkType.PersistCandles:
-                        if (_chartingOptions.EnablePersistence && _candleRepository != null && workItem.Candles != null)
-                        {
-                            await _candleRepository.UpsertCandlesAsync(
-                                workItem.Symbol, 
-                                workItem.Interval, 
-                                workItem.Candles, 
-                                cancellationToken);
-                        }
-                        break;
-                        
-                    case BackgroundWorkType.BackfillGap:
-                        await ProcessBackfillAsync(workItem, cancellationToken);
-                        break;
+                    await _candleRepository.UpsertCandlesAsync(
+                        workItem.Symbol, 
+                        workItem.Interval, 
+                        workItem.Candles, 
+                        cancellationToken);
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error processing work item of type {Type} for {Symbol} {Interval}", 
-                    workItem.Type, workItem.Symbol, workItem.Interval);
+                _logger.LogError(ex, "Error persisting candles for {Symbol} {Interval}", 
+                    workItem.Symbol, workItem.Interval);
             }
         }
         
-        _logger.LogInformation("Background work queue processor stopped");
+        _logger.LogInformation("Persist queue processor stopped");
+    }
+
+    private async Task ProcessBackfillQueueAsync(CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Backfill queue processor starting...");
+        
+        await foreach (var workItem in _backfillQueue.Reader.ReadAllAsync(cancellationToken))
+        {
+            try
+            {
+                await ProcessBackfillAsync(workItem, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing backfill for {Symbol} {Interval}", 
+                    workItem.Symbol, workItem.Interval);
+            }
+        }
+        
+        _logger.LogInformation("Backfill queue processor stopped");
     }
 
     private async Task ProcessBackfillAsync(BackgroundWorkItem workItem, CancellationToken cancellationToken)
@@ -209,14 +237,36 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
         {
             if (workItem.GapStart.HasValue && workItem.GapEnd.HasValue)
             {
+                var originalStart = workItem.GapStart.Value;
+                var originalEnd = workItem.GapEnd.Value;
+                var originalRange = originalEnd - originalStart;
+                
+                // Clamp backfill range to prevent excessive API calls
+                var maxRange = IntervalHelper.GetMaxBackfillRange(workItem.Interval);
+                var clampedStart = originalStart;
+                var clampedEnd = originalEnd;
+                
+                if (originalRange > maxRange)
+                {
+                    // Clamp to the most recent data (keep end time, adjust start time)
+                    clampedStart = originalEnd - maxRange;
+                    
+                    _logger.LogWarning("Backfill range clamped for {Symbol} {Interval}: " +
+                        "original range {OriginalRange} (from {OriginalStart} to {OriginalEnd}) " +
+                        "exceeds max {MaxRange}, clamping to {ClampedRange} (from {ClampedStart} to {ClampedEnd})",
+                        workItem.Symbol, workItem.Interval,
+                        originalRange, originalStart, originalEnd,
+                        maxRange, clampedEnd - clampedStart, clampedStart, clampedEnd);
+                }
+                
                 _logger.LogInformation("Backfilling gap for {Symbol} {Interval} from {Start} to {End}", 
-                    workItem.Symbol, workItem.Interval, workItem.GapStart, workItem.GapEnd);
+                    workItem.Symbol, workItem.Interval, clampedStart, clampedEnd);
 
                 var backfillCandles = await _candleService.GetCandlesAsync(
                     workItem.Symbol,
                     workItem.Interval,
-                    startTime: workItem.GapStart,
-                    endTime: workItem.GapEnd,
+                    startTime: clampedStart,
+                    endTime: clampedEnd,
                     limit: 1000,
                     cancellationToken: cancellationToken);
 
@@ -259,10 +309,63 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
 
     private void EnqueueWork(BackgroundWorkItem workItem)
     {
-        if (!_workQueue.Writer.TryWrite(workItem))
+        bool enqueued = false;
+        
+        if (workItem.Type == BackgroundWorkType.BackfillGap)
         {
-            _logger.LogWarning("Failed to enqueue work item of type {Type} for {Symbol} {Interval} - queue may be full", 
-                workItem.Type, workItem.Symbol, workItem.Interval);
+            // Check global rate limit for backfills
+            if (!CheckGlobalBackfillRateLimit())
+            {
+                _logger.LogWarning("Global backfill rate limit exceeded for {Symbol} {Interval} - skipping enqueue. " +
+                    "Max {MaxRate} backfills per minute allowed.", 
+                    workItem.Symbol, workItem.Interval, MaxBackfillsPerMinute);
+                return;
+            }
+            
+            // Try to enqueue backfill work (this will wait if queue is full due to BoundedChannelFullMode.Wait)
+            enqueued = _backfillQueue.Writer.TryWrite(workItem);
+            
+            if (!enqueued)
+            {
+                _logger.LogError("Failed to enqueue backfill work for {Symbol} {Interval} - this should not happen with Wait mode", 
+                    workItem.Symbol, workItem.Interval);
+            }
+        }
+        else if (workItem.Type == BackgroundWorkType.PersistCandles)
+        {
+            // Try to enqueue persist work (oldest items will be dropped if queue is full)
+            enqueued = _persistQueue.Writer.TryWrite(workItem);
+            
+            if (!enqueued)
+            {
+                _logger.LogDebug("Persist queue full, oldest persist work dropped for {Symbol} {Interval}", 
+                    workItem.Symbol, workItem.Interval);
+            }
+        }
+    }
+
+    private bool CheckGlobalBackfillRateLimit()
+    {
+        lock (_rateLimitLock)
+        {
+            var now = DateTime.UtcNow;
+            var oneMinuteAgo = now.AddMinutes(-1);
+            
+            // Remove timestamps older than 1 minute
+            while (_globalBackfillTimestamps.Count > 0 && _globalBackfillTimestamps.Peek() < oneMinuteAgo)
+            {
+                _globalBackfillTimestamps.Dequeue();
+            }
+            
+            // Check if we've exceeded the rate limit
+            if (_globalBackfillTimestamps.Count >= MaxBackfillsPerMinute)
+            {
+                return false;
+            }
+            
+            // Add current timestamp and allow the backfill
+            _globalBackfillTimestamps.Enqueue(now);
+            return true;
         }
     }
 
@@ -326,7 +429,7 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
             var result = await _socketClient.SpotApiV2.SubscribeToKlineUpdatesAsync(
                 symbol,
                 streamInterval,
-                async data =>
+                data =>
                 {
                     try
                     {
@@ -676,23 +779,6 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
 
     private TimeSpan ParseIntervalToTimeSpan(string interval)
     {
-        return interval.ToLowerInvariant() switch
-        {
-            "1m" => TimeSpan.FromMinutes(1),
-            "5m" => TimeSpan.FromMinutes(5),
-            "15m" => TimeSpan.FromMinutes(15),
-            "30m" => TimeSpan.FromMinutes(30),
-            "1h" => TimeSpan.FromHours(1),
-            "4h" => TimeSpan.FromHours(4),
-            "6h" => TimeSpan.FromHours(6),
-            "12h" => TimeSpan.FromHours(12),
-            "1d" => TimeSpan.FromDays(1),
-            "3d" => TimeSpan.FromDays(3),
-            "1w" => TimeSpan.FromDays(7),
-            // Note: Using 30 days as approximation for 1 month interval
-            // This may cause minor gap detection inaccuracies for months with 28, 29, or 31 days
-            "1mo" or "1month" => TimeSpan.FromDays(30),
-            _ => TimeSpan.FromMinutes(1)
-        };
+        return IntervalHelper.ParseIntervalToTimeSpan(interval);
     }
 }
