@@ -167,8 +167,9 @@ public class PostgresCandleRepository : ICandleRepository
                 var totalUpserted = 0;
                 var updatedAt = DateTime.UtcNow;
 
-                foreach (var chunk in chunks)
+                for (int chunkIdx = 0; chunkIdx < chunks.Count; chunkIdx++)
                 {
+                    var chunk = chunks[chunkIdx];
                     // Build multi-row VALUES clause
                     var valuesClauses = new List<string>();
                     var parameters = new List<NpgsqlParameter>();
@@ -176,7 +177,6 @@ public class PostgresCandleRepository : ICandleRepository
                     for (int i = 0; i < chunk.Count; i++)
                     {
                         var candle = chunk[i];
-                        var paramBase = i * 10;
                         
                         valuesClauses.Add($"(@symbol, @interval, @openTime{i}, @open{i}, @high{i}, @low{i}, @close{i}, @volume{i}, @quoteVolume{i}, @updatedAt)");
                         
@@ -208,11 +208,11 @@ public class PostgresCandleRepository : ICandleRepository
                     command.Parameters.AddWithValue("@updatedAt", updatedAt);
                     command.Parameters.AddRange(parameters.ToArray());
 
-                    var rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken);
+                    await command.ExecuteNonQueryAsync(cancellationToken);
                     totalUpserted += chunk.Count;
                     
                     _logger.LogTrace("Batch upserted {Count} candles for {Symbol} {Interval} (chunk {Current}/{Total})", 
-                        chunk.Count, symbol, interval, chunks.IndexOf(chunk) + 1, chunks.Count);
+                        chunk.Count, symbol, interval, chunkIdx + 1, chunks.Count);
                 }
 
                 await transaction.CommitAsync(cancellationToken);

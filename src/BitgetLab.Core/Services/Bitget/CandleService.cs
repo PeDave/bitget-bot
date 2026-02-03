@@ -117,6 +117,8 @@ public class CandleService : ICandleService
                 
                 if (newCandles.Count > 0)
                 {
+                    // Fire-and-forget persistence for REST API calls (acceptable here as these are
+                    // one-off operations, not real-time streams like WebSocket updates)
                     _ = Task.Run(async () =>
                     {
                         try
@@ -140,6 +142,8 @@ public class CandleService : ICandleService
         // Persist to database if enabled
         if (_chartingOptions.EnablePersistence && _candleRepository != null && candles.Count > 0)
         {
+            // Fire-and-forget persistence for REST API calls (acceptable here as these are
+            // one-off operations, not real-time streams like WebSocket updates)
             _ = Task.Run(async () =>
             {
                 try
