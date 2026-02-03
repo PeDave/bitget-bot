@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using BitgetLab.Core.Services.Bitget;
+using BitgetLab.Core.Models;
 
 namespace BitgetLab.Api.Controllers;
 
@@ -18,6 +19,9 @@ public class BitgetController : ControllerBase
     private readonly IFuturesOrderHistoryService _futuresOrderHistoryService;
     private readonly ICopyTradingService _copyTradingService;
     private readonly IBitgetClientFactory _clientFactory;
+    private readonly ICandleService _candleService;
+    private readonly IIndicatorService _indicatorService;
+    private readonly IWebSocketSubscriptionService _subscriptionService;
     private readonly ILogger<BitgetController> _logger;
 
     public BitgetController(
@@ -32,6 +36,9 @@ public class BitgetController : ControllerBase
         IFuturesOrderHistoryService futuresOrderHistoryService,
         ICopyTradingService copyTradingService,
         IBitgetClientFactory clientFactory,
+        ICandleService candleService,
+        IIndicatorService indicatorService,
+        IWebSocketSubscriptionService subscriptionService,
         ILogger<BitgetController> logger)
     {
         _marketDataService = marketDataService;
@@ -45,6 +52,9 @@ public class BitgetController : ControllerBase
         _futuresOrderHistoryService = futuresOrderHistoryService;
         _copyTradingService = copyTradingService;
         _clientFactory = clientFactory;
+        _candleService = candleService;
+        _indicatorService = indicatorService;
+        _subscriptionService = subscriptionService;
         _logger = logger;
     }
 
@@ -587,12 +597,25 @@ public class BitgetController : ControllerBase
             });
         }
 
-        if (string.IsNullOrWhiteSpace(orderId) && string.IsNullOrWhiteSpace(clientOrderId))
+        // XOR validation: require exactly one of orderId or clientOrderId
+        var hasOrderId = !string.IsNullOrWhiteSpace(orderId);
+        var hasClientOrderId = !string.IsNullOrWhiteSpace(clientOrderId);
+
+        if (!hasOrderId && !hasClientOrderId)
         {
             return BadRequest(new
             {
                 success = false,
-                error = "Either orderId or clientOrderId parameter is required"
+                error = "Exactly one of orderId or clientOrderId is required"
+            });
+        }
+
+        if (hasOrderId && hasClientOrderId)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Cannot provide both orderId and clientOrderId - provide exactly one"
             });
         }
 
@@ -611,6 +634,17 @@ public class BitgetController : ControllerBase
         catch (BitgetApiException ex)
         {
             _logger.LogError(ex, "Bitget API error while getting spot order detail");
+            
+            // Map parameter errors to HTTP 400
+            if (IsParameterError(ex.Message))
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    error = SanitizeErrorMessage(ex.Message)
+                });
+            }
+
             return StatusCode(502, new
             {
                 success = false,
@@ -743,12 +777,25 @@ public class BitgetController : ControllerBase
             });
         }
 
-        if (string.IsNullOrWhiteSpace(orderId) && string.IsNullOrWhiteSpace(clientOrderId))
+        // XOR validation: require exactly one of orderId or clientOrderId
+        var hasOrderId = !string.IsNullOrWhiteSpace(orderId);
+        var hasClientOrderId = !string.IsNullOrWhiteSpace(clientOrderId);
+
+        if (!hasOrderId && !hasClientOrderId)
         {
             return BadRequest(new
             {
                 success = false,
-                error = "Either orderId or clientOrderId parameter is required"
+                error = "Exactly one of orderId or clientOrderId is required"
+            });
+        }
+
+        if (hasOrderId && hasClientOrderId)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Cannot provide both orderId and clientOrderId - provide exactly one"
             });
         }
 
@@ -767,6 +814,17 @@ public class BitgetController : ControllerBase
         catch (BitgetApiException ex)
         {
             _logger.LogError(ex, "Bitget API error while getting futures order detail");
+            
+            // Map parameter errors to HTTP 400
+            if (IsParameterError(ex.Message))
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    error = SanitizeErrorMessage(ex.Message)
+                });
+            }
+
             return StatusCode(502, new
             {
                 success = false,
@@ -832,5 +890,377 @@ public class BitgetController : ControllerBase
                 message = ex.Message
             });
         }
+    }
+
+    [HttpGet("market/candles")]
+    public async Task<IActionResult> GetCandles(
+        [FromQuery] string symbol,
+        [FromQuery] string interval,
+        [FromQuery] DateTime? startTime = null,
+        [FromQuery] DateTime? endTime = null,
+        [FromQuery] int limit = 100,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(symbol))
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Symbol parameter is required"
+            });
+        }
+
+        if (string.IsNullOrWhiteSpace(interval))
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Interval parameter is required"
+            });
+        }
+
+        try
+        {
+            var candles = await _candleService.GetCandlesAsync(
+                symbol, interval, startTime, endTime, limit, cancellationToken);
+            var candleList = candles.ToList();
+
+            return Ok(new
+            {
+                success = true,
+                data = candleList,
+                count = candleList.Count
+            });
+        }
+        catch (BitgetApiException ex)
+        {
+            _logger.LogError(ex, "Bitget API error while getting candles for {Symbol}", symbol);
+            
+            // Map parameter errors to HTTP 400
+            if (IsParameterError(ex.Message))
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    error = SanitizeErrorMessage(ex.Message)
+                });
+            }
+
+            return StatusCode(502, new
+            {
+                success = false,
+                error = $"Failed to retrieve candles for {symbol} from Bitget",
+                message = ex.Message
+            });
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Invalid arguments for getting candles");
+            return BadRequest(new
+            {
+                success = false,
+                error = ex.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get candles for {Symbol}", symbol);
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
+    }
+
+    [HttpGet("market/indicators")]
+    public async Task<IActionResult> GetIndicators(
+        [FromQuery] string symbol,
+        [FromQuery] string interval,
+        [FromQuery] string indicator,
+        [FromQuery] int period,
+        [FromQuery] DateTime? startTime = null,
+        [FromQuery] DateTime? endTime = null,
+        [FromQuery] int limit = 100,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(symbol))
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Symbol parameter is required"
+            });
+        }
+
+        if (string.IsNullOrWhiteSpace(interval))
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Interval parameter is required"
+            });
+        }
+
+        if (string.IsNullOrWhiteSpace(indicator))
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Indicator parameter is required (SMA, EMA, or RSI)"
+            });
+        }
+
+        if (period <= 0)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Period must be greater than 0"
+            });
+        }
+
+        try
+        {
+            var indicators = await _indicatorService.ComputeIndicatorAsync(
+                symbol, interval, indicator, period, startTime, endTime, limit, cancellationToken);
+            var indicatorList = indicators.ToList();
+
+            return Ok(new
+            {
+                success = true,
+                data = indicatorList,
+                count = indicatorList.Count,
+                indicator = indicator.ToUpperInvariant(),
+                period
+            });
+        }
+        catch (BitgetApiException ex)
+        {
+            _logger.LogError(ex, "Bitget API error while computing indicators for {Symbol}", symbol);
+            
+            // Map parameter errors to HTTP 400
+            if (IsParameterError(ex.Message))
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    error = SanitizeErrorMessage(ex.Message)
+                });
+            }
+
+            return StatusCode(502, new
+            {
+                success = false,
+                error = $"Failed to retrieve data for computing indicators for {symbol} from Bitget",
+                message = ex.Message
+            });
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Invalid arguments for computing indicators");
+            return BadRequest(new
+            {
+                success = false,
+                error = ex.Message
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "Cannot compute indicators");
+            return BadRequest(new
+            {
+                success = false,
+                error = ex.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to compute indicators for {Symbol}", symbol);
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
+    }
+
+    [HttpPost("market/subscribe")]
+    public async Task<IActionResult> Subscribe(
+        [FromBody] SubscriptionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (request == null || string.IsNullOrWhiteSpace(request.Symbol))
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Symbol is required"
+            });
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Interval))
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Interval is required"
+            });
+        }
+
+        try
+        {
+            var subscribed = await _subscriptionService.SubscribeAsync(
+                request.Symbol, request.Interval, cancellationToken);
+
+            return Ok(new
+            {
+                success = true,
+                subscribed,
+                symbol = request.Symbol,
+                interval = request.Interval,
+                message = subscribed 
+                    ? "Subscription created successfully" 
+                    : "Subscription already exists"
+            });
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Invalid subscription request");
+            return BadRequest(new
+            {
+                success = false,
+                error = ex.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create subscription");
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
+    }
+
+    [HttpPost("market/unsubscribe")]
+    public async Task<IActionResult> Unsubscribe(
+        [FromBody] SubscriptionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (request == null || string.IsNullOrWhiteSpace(request.Symbol))
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Symbol is required"
+            });
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Interval))
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Interval is required"
+            });
+        }
+
+        try
+        {
+            var unsubscribed = await _subscriptionService.UnsubscribeAsync(
+                request.Symbol, request.Interval, cancellationToken);
+
+            return Ok(new
+            {
+                success = true,
+                unsubscribed,
+                symbol = request.Symbol,
+                interval = request.Interval,
+                message = unsubscribed 
+                    ? "Unsubscribed successfully" 
+                    : "Subscription not found"
+            });
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Invalid unsubscribe request");
+            return BadRequest(new
+            {
+                success = false,
+                error = ex.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to unsubscribe");
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
+    }
+
+    [HttpGet("market/subscriptions")]
+    public IActionResult GetSubscriptions()
+    {
+        try
+        {
+            var subscriptions = _subscriptionService.GetActiveSubscriptions();
+            var subscriptionList = subscriptions.Select(s => new
+            {
+                symbol = s.Symbol,
+                interval = s.Interval,
+                subscribedAt = s.SubscribedAt,
+                hasLatestCandle = s.LatestCandle != null
+            }).ToList();
+
+            return Ok(new
+            {
+                success = true,
+                data = subscriptionList,
+                count = subscriptionList.Count
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get subscriptions");
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
+    }
+
+    // Helper methods for error mapping
+    private bool IsParameterError(string errorMessage)
+    {
+        if (string.IsNullOrEmpty(errorMessage))
+            return false;
+
+        var lowerError = errorMessage.ToLowerInvariant();
+        return lowerError.Contains("parameter") || 
+               lowerError.Contains("invalid") || 
+               lowerError.Contains("error");
+    }
+
+    private string SanitizeErrorMessage(string errorMessage)
+    {
+        // Return a clean, user-friendly error message
+        if (string.IsNullOrEmpty(errorMessage))
+            return "Invalid request parameters";
+
+        // Strip out any internal details and keep it simple
+        return errorMessage.Length > 200 
+            ? errorMessage.Substring(0, 200) + "..." 
+            : errorMessage;
     }
 }
