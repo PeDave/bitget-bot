@@ -15,20 +15,9 @@ public class RsiStrategy : IStrategy
 
     public void Configure(Dictionary<string, object> parameters)
     {
-        if (parameters.TryGetValue("period", out var period))
-        {
-            _period = Convert.ToInt32(period);
-        }
-        
-        if (parameters.TryGetValue("oversoldThreshold", out var oversold))
-        {
-            _oversoldThreshold = Convert.ToDecimal(oversold);
-        }
-        
-        if (parameters.TryGetValue("overboughtThreshold", out var overbought))
-        {
-            _overboughtThreshold = Convert.ToDecimal(overbought);
-        }
+        _period = ParameterHelper.GetInt32(parameters, "period", _period);
+        _oversoldThreshold = ParameterHelper.GetDecimal(parameters, "oversoldThreshold", _oversoldThreshold);
+        _overboughtThreshold = ParameterHelper.GetDecimal(parameters, "overboughtThreshold", _overboughtThreshold);
 
         if (_period < 2)
         {

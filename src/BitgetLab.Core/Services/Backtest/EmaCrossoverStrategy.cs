@@ -14,15 +14,8 @@ public class EmaCrossoverStrategy : IStrategy
 
     public void Configure(Dictionary<string, object> parameters)
     {
-        if (parameters.TryGetValue("fastPeriod", out var fastPeriod))
-        {
-            _fastPeriod = Convert.ToInt32(fastPeriod);
-        }
-        
-        if (parameters.TryGetValue("slowPeriod", out var slowPeriod))
-        {
-            _slowPeriod = Convert.ToInt32(slowPeriod);
-        }
+        _fastPeriod = ParameterHelper.GetInt32(parameters, "fastPeriod", _fastPeriod);
+        _slowPeriod = ParameterHelper.GetInt32(parameters, "slowPeriod", _slowPeriod);
 
         if (_fastPeriod >= _slowPeriod)
         {
