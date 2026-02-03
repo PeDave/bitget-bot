@@ -49,22 +49,28 @@ public class GridParameterConverter : JsonConverter<Dictionary<string, List<obje
                     }
 
                     // Read array element and convert to appropriate type
-                    object? value = reader.TokenType switch
+                    // Skip null values - they should not be in the grid arrays
+                    if (reader.TokenType == JsonTokenType.Null)
                     {
-                        JsonTokenType.Number => reader.TryGetInt32(out int intValue) 
-                            ? intValue 
+                        continue;
+                    }
+
+                    object value = reader.TokenType switch
+                    {
+                        // For numbers, preserve integer type if possible
+                        // Use TryGetInt64 for better range support while still favoring integers
+                        JsonTokenType.Number => reader.TryGetInt64(out long longValue) && 
+                                                longValue >= int.MinValue && 
+                                                longValue <= int.MaxValue
+                            ? (int)longValue
                             : (object)reader.GetDecimal(),
                         JsonTokenType.String => reader.GetString()!,
                         JsonTokenType.True => true,
                         JsonTokenType.False => false,
-                        JsonTokenType.Null => null!,
                         _ => throw new JsonException($"Unexpected token type: {reader.TokenType}")
                     };
 
-                    if (value != null)
-                    {
-                        list.Add(value);
-                    }
+                    list.Add(value);
                 }
 
                 result[propertyName] = list;
