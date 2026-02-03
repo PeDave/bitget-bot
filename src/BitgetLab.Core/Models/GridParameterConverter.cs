@@ -34,7 +34,8 @@ public class GridParameterConverter : JsonConverter<Dictionary<string, List<obje
                 throw new JsonException("Expected PropertyName token");
             }
 
-            string propertyName = reader.GetString()!;
+            string propertyName = reader.GetString() 
+                ?? throw new JsonException("Property name cannot be null");
             reader.Read();
 
             if (reader.TokenType == JsonTokenType.StartArray)
@@ -57,7 +58,8 @@ public class GridParameterConverter : JsonConverter<Dictionary<string, List<obje
                     object value = reader.TokenType switch
                     {
                         JsonTokenType.Number => ConvertNumber(ref reader),
-                        JsonTokenType.String => reader.GetString()!,
+                        JsonTokenType.String => reader.GetString() 
+                            ?? throw new JsonException("String value in grid array cannot be null"),
                         JsonTokenType.True => true,
                         JsonTokenType.False => false,
                         _ => throw new JsonException($"Unexpected token type: {reader.TokenType}")
@@ -108,9 +110,13 @@ public class GridParameterConverter : JsonConverter<Dictionary<string, List<obje
         {
             return reader.GetDouble();
         }
-        catch
+        catch (InvalidOperationException ex)
         {
-            throw new JsonException($"Unable to convert number value to a supported numeric type");
+            throw new JsonException($"Unable to convert number value to a supported numeric type", ex);
+        }
+        catch (FormatException ex)
+        {
+            throw new JsonException($"Number value has invalid format", ex);
         }
     }
 
