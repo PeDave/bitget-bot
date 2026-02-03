@@ -179,11 +179,50 @@ curl http://localhost:3001/api/bitget/spot/orders/open
 # Get spot open orders with filters
 curl "http://localhost:3001/api/bitget/spot/orders/open?symbol=BTCUSDT&limit=50"
 
+# Get spot closed orders
+curl http://localhost:3001/api/bitget/spot/orders/closed
+
+# Get spot closed orders with filters
+curl "http://localhost:3001/api/bitget/spot/orders/closed?symbol=BTCUSDT&limit=50"
+
+# Get spot order detail by order ID
+curl "http://localhost:3001/api/bitget/spot/orders/detail?symbol=BTCUSDT&orderId=123456789"
+
+# Get spot order detail by client order ID
+curl "http://localhost:3001/api/bitget/spot/orders/detail?symbol=BTCUSDT&clientOrderId=my-order-123"
+
+# Get spot user trades
+curl http://localhost:3001/api/bitget/spot/trades
+
+# Get spot user trades with filters
+curl "http://localhost:3001/api/bitget/spot/trades?symbol=BTCUSDT&orderId=123456789&limit=50"
+
 # Get futures open orders (USDT and USDC futures)
 curl http://localhost:3001/api/bitget/futures/orders/open
 
 # Get futures open orders with filters
 curl "http://localhost:3001/api/bitget/futures/orders/open?includeUsdc=false&symbol=BTCUSDT&limit=50"
+
+# Get futures closed orders
+curl http://localhost:3001/api/bitget/futures/orders/closed
+
+# Get futures closed orders with filters
+curl "http://localhost:3001/api/bitget/futures/orders/closed?includeUsdc=false&symbol=BTCUSDT&limit=50"
+
+# Get futures order detail by order ID
+curl "http://localhost:3001/api/bitget/futures/orders/detail?symbol=BTCUSDT&orderId=123456789"
+
+# Get futures order detail by client order ID
+curl "http://localhost:3001/api/bitget/futures/orders/detail?symbol=BTCUSDT&clientOrderId=my-order-123"
+
+# Get futures order detail with specific product type
+curl "http://localhost:3001/api/bitget/futures/orders/detail?productType=USDT-FUTURES&symbol=BTCUSDT&orderId=123456789"
+
+# Get futures user trades
+curl http://localhost:3001/api/bitget/futures/trades
+
+# Get futures user trades with filters
+curl "http://localhost:3001/api/bitget/futures/trades?includeUsdc=false&symbol=BTCUSDT&orderId=123456789&limit=50"
 
 # Get copy trading current orders
 curl http://localhost:3001/api/bitget/copytrading/current-orders
@@ -486,7 +525,214 @@ Retrieves total account valuation across all account types (spot, p2p, futures, 
 curl http://localhost:3001/api/bitget/account/valuation
 ```
 
-**Note**: Both endpoints require read-only API credentials and work in ReadOnly mode.
+#### 3. Spot Order History and Trades
+
+##### Get Spot Closed Orders
+**Endpoint**: `GET /api/bitget/spot/orders/closed`
+
+Retrieves closed (completed, cancelled, or expired) spot orders.
+
+**Query Parameters**:
+- `symbol` (string, optional) - Trading symbol filter (e.g., "BTCUSDT")
+- `orderId` (string, optional) - Filter by specific order ID
+- `startTime` (DateTime, optional) - Filter orders after this time
+- `endTime` (DateTime, optional) - Filter orders before this time
+- `idLessThan` (string, optional) - Pagination cursor
+- `limit` (int, default: 100) - Maximum number of results
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "orderId": "1234567890",
+      "clientOrderId": "my-order-123",
+      "symbol": "BTCUSDT",
+      "side": "Buy",
+      "type": "Limit",
+      "status": "Filled",
+      "price": 50000.0,
+      "quantity": 0.1,
+      "quantityFilled": 0.1,
+      "averagePrice": 50000.0,
+      "createTime": "2024-01-01T12:00:00Z",
+      "updateTime": "2024-01-01T12:01:00Z",
+      "source": "spot",
+      "productType": null,
+      "marginAsset": null
+    }
+  ],
+  "count": 1
+}
+```
+
+**Examples**:
+```bash
+# Get all closed orders
+curl http://localhost:3001/api/bitget/spot/orders/closed
+
+# Get closed orders for a specific symbol
+curl "http://localhost:3001/api/bitget/spot/orders/closed?symbol=BTCUSDT&limit=50"
+```
+
+##### Get Spot Order Detail
+**Endpoint**: `GET /api/bitget/spot/orders/detail`
+
+Retrieves detailed information for a specific spot order.
+
+**Query Parameters** (required):
+- `symbol` (string, required) - Trading symbol (e.g., "BTCUSDT")
+- `orderId` (string, optional) - Order ID (exactly one of orderId or clientOrderId required)
+- `clientOrderId` (string, optional) - Client order ID (exactly one of orderId or clientOrderId required)
+
+**Response**: Same structure as closed orders, returns a single order wrapped in an array.
+
+**Examples**:
+```bash
+# Get order detail by order ID
+curl "http://localhost:3001/api/bitget/spot/orders/detail?symbol=BTCUSDT&orderId=1234567890"
+
+# Get order detail by client order ID
+curl "http://localhost:3001/api/bitget/spot/orders/detail?symbol=BTCUSDT&clientOrderId=my-order-123"
+```
+
+##### Get Spot User Trades
+**Endpoint**: `GET /api/bitget/spot/trades`
+
+Retrieves spot trade history (fills/executions).
+
+**Query Parameters**:
+- `symbol` (string, optional) - Trading symbol filter
+- `orderId` (string, optional) - Filter by specific order ID
+- `startTime` (DateTime, optional) - Filter trades after this time
+- `endTime` (DateTime, optional) - Filter trades before this time
+- `idLessThan` (string, optional) - Pagination cursor
+- `limit` (int, default: 100) - Maximum number of results
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "tradeId": "9876543210",
+      "orderId": "1234567890",
+      "clientOrderId": null,
+      "symbol": "BTCUSDT",
+      "side": "Buy",
+      "price": 50000.0,
+      "quantity": 0.1,
+      "tradeTime": "2024-01-01T12:00:00Z",
+      "feeAsset": "USDT",
+      "fee": 5.0,
+      "feeDeduction": null,
+      "feeTotalDeduction": null,
+      "source": "spot",
+      "productType": null,
+      "marginAsset": null
+    }
+  ],
+  "count": 1
+}
+```
+
+**Examples**:
+```bash
+# Get all trades
+curl http://localhost:3001/api/bitget/spot/trades
+
+# Get trades for a specific order
+curl "http://localhost:3001/api/bitget/spot/trades?orderId=1234567890"
+```
+
+#### 4. Futures Order History and Trades
+
+##### Get Futures Closed Orders
+**Endpoint**: `GET /api/bitget/futures/orders/closed`
+
+Retrieves closed futures orders. Queries USDT and USDC futures in parallel when both include flags are set.
+
+**Query Parameters**:
+- `includeUsdt` (bool, default: true) - Include USDT futures orders
+- `includeUsdc` (bool, default: true) - Include USDC futures orders
+- `symbol` (string, optional) - Trading symbol filter
+- `orderId` (string, optional) - Filter by specific order ID
+- `clientOrderId` (string, optional) - Filter by client order ID
+- `startTime` (DateTime, optional) - Filter orders after this time
+- `endTime` (DateTime, optional) - Filter orders before this time
+- `idLessThan` (string, optional) - Pagination cursor
+- `limit` (int, default: 100) - Maximum number of results per product type
+
+**Response**: Same structure as spot orders but includes `productType` ("USDT-FUTURES" or "USDC-FUTURES") and `marginAsset` fields.
+
+**Examples**:
+```bash
+# Get all futures closed orders
+curl http://localhost:3001/api/bitget/futures/orders/closed
+
+# Get only USDT futures closed orders
+curl "http://localhost:3001/api/bitget/futures/orders/closed?includeUsdc=false"
+```
+
+##### Get Futures Order Detail
+**Endpoint**: `GET /api/bitget/futures/orders/detail`
+
+Retrieves detailed information for a specific futures order. When productType is not specified, searches both USDT and USDC futures in parallel.
+
+**Query Parameters**:
+- `includeUsdt` (bool, default: true) - Include USDT futures when searching
+- `includeUsdc` (bool, default: true) - Include USDC futures when searching
+- `productType` (string, optional) - Override product type ("USDT-FUTURES" or "USDC-FUTURES")
+- `symbol` (string, required) - Trading symbol
+- `orderId` (string, optional) - Order ID (exactly one of orderId or clientOrderId required)
+- `clientOrderId` (string, optional) - Client order ID (exactly one of orderId or clientOrderId required)
+
+**Examples**:
+```bash
+# Search both USDT and USDC futures
+curl "http://localhost:3001/api/bitget/futures/orders/detail?symbol=BTCUSDT&orderId=1234567890"
+
+# Query specific product type
+curl "http://localhost:3001/api/bitget/futures/orders/detail?productType=USDT-FUTURES&symbol=BTCUSDT&orderId=1234567890"
+```
+
+##### Get Futures User Trades
+**Endpoint**: `GET /api/bitget/futures/trades`
+
+Retrieves futures trade history. Queries USDT and USDC futures in parallel when both include flags are set.
+
+**Query Parameters**:
+- `includeUsdt` (bool, default: true) - Include USDT futures trades
+- `includeUsdc` (bool, default: true) - Include USDC futures trades
+- `symbol` (string, optional) - Trading symbol filter
+- `orderId` (string, optional) - Filter by specific order ID
+- `startTime` (DateTime, optional) - Filter trades after this time
+- `endTime` (DateTime, optional) - Filter trades before this time
+- `idLessThan` (string, optional) - Pagination cursor
+- `limit` (int, default: 100) - Maximum number of results per product type
+
+**Response**: Includes normalized fee fields:
+- `feeAsset` - The asset used for fees
+- `fee` - Primary fee amount
+- `feeDeduction` - Fee deduction amount (futures only)
+- `feeTotalDeduction` - Total fee deduction (futures only)
+
+**Examples**:
+```bash
+# Get all futures trades
+curl http://localhost:3001/api/bitget/futures/trades
+
+# Get only USDT futures trades for a specific symbol
+curl "http://localhost:3001/api/bitget/futures/trades?includeUsdc=false&symbol=BTCUSDT"
+```
+
+**Note**: All order history and trade endpoints require read-only API credentials and work in ReadOnly mode.
+
+**Liquidation Information**: 
+- Liquidation price for open positions is available via the `/api/bitget/futures/positions` endpoint.
+- Historical liquidation events can be queried through the closed orders endpoint (`/api/bitget/futures/orders/closed`), where liquidated orders will have specific status indicators.
+- A dedicated liquidation history/events endpoint may be added in the future if needed.
 
 ### Submodule Management
 
