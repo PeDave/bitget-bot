@@ -1030,6 +1030,63 @@ public class BitgetController : ControllerBase
         }
     }
 
+    [HttpGet("market/candle-buffer")]
+    public IActionResult GetCandleBuffer(
+        [FromQuery] string symbol,
+        [FromQuery] string interval,
+        [FromQuery] int limit = 500)
+    {
+        if (string.IsNullOrWhiteSpace(symbol))
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Symbol parameter is required"
+            });
+        }
+
+        if (string.IsNullOrWhiteSpace(interval))
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Interval parameter is required"
+            });
+        }
+
+        // Validate and cap limit
+        if (limit <= 0)
+        {
+            limit = 500;
+        }
+        if (limit > 500)
+        {
+            limit = 500;
+        }
+
+        try
+        {
+            var candles = _subscriptionService.GetCandleBuffer(symbol, interval, limit);
+            
+            return Ok(new
+            {
+                success = true,
+                data = candles,
+                count = candles.Count
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get candle buffer for {Symbol} {Interval}", symbol, interval);
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
+    }
+
     [HttpGet("market/indicators")]
     public async Task<IActionResult> GetIndicators(
         [FromQuery] string symbol,

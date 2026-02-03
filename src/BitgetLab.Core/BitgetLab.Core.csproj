@@ -9,6 +9,7 @@
   <ItemGroup>
     <PackageReference Include="CryptoExchange.Net" Version="10.3.0" />
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="8.0.0" />
+    <PackageReference Include="Npgsql" Version="8.0.6" />
   </ItemGroup>
 
   <ItemGroup>

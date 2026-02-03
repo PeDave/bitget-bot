@@ -1,4 +1,6 @@
 using BitgetLab.Core.Models;
+using BitgetLab.Core.Options;
+using Microsoft.Extensions.Options;
 
 namespace BitgetLab.Core.Services.Bitget;
 
@@ -29,10 +31,17 @@ public interface ICandleService
 public class CandleService : ICandleService
 {
     private readonly IBitgetClientFactory _clientFactory;
+    private readonly ICandleRepository? _candleRepository;
+    private readonly ChartingOptions _chartingOptions;
 
-    public CandleService(IBitgetClientFactory clientFactory)
+    public CandleService(
+        IBitgetClientFactory clientFactory,
+        IOptions<ChartingOptions> chartingOptions,
+        ICandleRepository? candleRepository = null)
     {
         _clientFactory = clientFactory;
+        _candleRepository = candleRepository;
+        _chartingOptions = chartingOptions.Value;
     }
 
     public async Task<IEnumerable<CandleDto>> GetCandlesAsync(
@@ -59,6 +68,20 @@ public class CandleService : ICandleService
             limit = 1000;
         }
 
+        // Try to get from database first if persistence is enabled
+        if (_chartingOptions.EnablePersistence && _candleRepository != null)
+        {
+            var dbCandles = await _candleRepository.GetCandlesAsync(
+                symbol, interval, startTime, endTime, limit, cancellationToken);
+            
+            var dbCandleList = dbCandles.ToList();
+            if (dbCandleList.Count > 0)
+            {
+                return dbCandleList;
+            }
+        }
+
+        // Otherwise fetch from Bitget REST API
         using var client = _clientFactory.CreateRestClient();
         
         // Get klines from Bitget Spot API
