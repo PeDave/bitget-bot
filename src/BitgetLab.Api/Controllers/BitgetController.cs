@@ -1010,15 +1010,13 @@ public class BitgetController : ControllerBase
                     count = 1
                 });
             }
-            else
+
+            return Ok(new
             {
-                return Ok(new
-                {
-                    success = true,
-                    data = Array.Empty<CandleDto>(),
-                    count = 0
-                });
-            }
+                success = true,
+                data = Array.Empty<CandleDto>(),
+                count = 0
+            });
         }
         catch (Exception ex)
         {

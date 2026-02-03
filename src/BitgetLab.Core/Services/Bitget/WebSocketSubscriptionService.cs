@@ -53,7 +53,7 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
     private readonly IBitgetSocketClientFactory _socketClientFactory;
     private readonly ILogger<WebSocketSubscriptionService> _logger;
     private readonly SemaphoreSlim _subscriptionLock = new(1, 1);
-    private IBitgetSocketClient? _socketClient;
+    private volatile IBitgetSocketClient? _socketClient;
 
     public WebSocketSubscriptionService(
         IBitgetSocketClientFactory socketClientFactory,
@@ -158,28 +158,36 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
                 streamInterval,
                 data =>
                 {
-                    // Handle incoming candle updates
-                    if (data.Data != null && data.Data.Length > 0)
+                    try
                     {
-                        var klineUpdate = data.Data[0];
-                        var candle = new CandleDto
+                        // Handle incoming candle updates
+                        if (data.Data != null && data.Data.Length > 0)
                         {
-                            OpenTime = klineUpdate.OpenTime,
-                            Open = klineUpdate.OpenPrice,
-                            High = klineUpdate.HighPrice,
-                            Low = klineUpdate.LowPrice,
-                            Close = klineUpdate.ClosePrice,
-                            Volume = klineUpdate.Volume,
-                            QuoteVolume = klineUpdate.QuoteVolume
-                        };
+                            var klineUpdate = data.Data[0];
+                            var candle = new CandleDto
+                            {
+                                OpenTime = klineUpdate.OpenTime,
+                                Open = klineUpdate.OpenPrice,
+                                High = klineUpdate.HighPrice,
+                                Low = klineUpdate.LowPrice,
+                                Close = klineUpdate.ClosePrice,
+                                Volume = klineUpdate.Volume,
+                                QuoteVolume = klineUpdate.QuoteVolume
+                            };
 
-                        // Update subscription with latest candle (thread-safe)
-                        if (_subscriptions.TryGetValue(key, out var subscription))
-                        {
-                            subscription.LatestCandle = candle;
-                            _logger.LogDebug("Updated candle for {Symbol} {Interval}: Close={Close}", 
-                                symbol, interval, candle.Close);
+                            // Update subscription with latest candle (thread-safe)
+                            if (_subscriptions.TryGetValue(key, out var subscription))
+                            {
+                                subscription.LatestCandle = candle;
+                                _logger.LogDebug("Updated candle for {Symbol} {Interval}: Close={Close}", 
+                                    symbol, interval, candle.Close);
+                            }
                         }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error processing candle update for {Symbol} {Interval}", 
+                            symbol, interval);
                     }
                 },
                 cancellationToken);
