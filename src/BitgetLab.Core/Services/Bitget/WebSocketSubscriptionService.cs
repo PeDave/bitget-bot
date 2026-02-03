@@ -216,7 +216,13 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
                                         {
                                             _logger.LogError(ex, "Error in gap detection for {Symbol} {Interval}", symbol, interval);
                                         }
-                                    });
+                                    }, CancellationToken.None).ContinueWith(t =>
+                                    {
+                                        if (t.IsFaulted && t.Exception != null)
+                                        {
+                                            _logger.LogError(t.Exception, "Unhandled error in gap detection task for {Symbol} {Interval}", symbol, interval);
+                                        }
+                                    }, TaskScheduler.Default);
                                 }
 
                                 // Persist to database if enabled
@@ -232,7 +238,13 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
                                         {
                                             _logger.LogError(ex, "Error persisting candle for {Symbol} {Interval}", symbol, interval);
                                         }
-                                    });
+                                    }, CancellationToken.None).ContinueWith(t =>
+                                    {
+                                        if (t.IsFaulted && t.Exception != null)
+                                        {
+                                            _logger.LogError(t.Exception, "Unhandled error in persistence task for {Symbol} {Interval}", symbol, interval);
+                                        }
+                                    }, TaskScheduler.Default);
                                 }
                             }
                         }
@@ -271,7 +283,13 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
                     {
                         _logger.LogError(ex, "Error initializing buffer for {Symbol} {Interval}", symbol, interval);
                     }
-                });
+                }, CancellationToken.None).ContinueWith(t =>
+                {
+                    if (t.IsFaulted && t.Exception != null)
+                    {
+                        _logger.LogError(t.Exception, "Unhandled error in buffer initialization task for {Symbol} {Interval}", symbol, interval);
+                    }
+                }, TaskScheduler.Default);
                 
                 return true;
             }

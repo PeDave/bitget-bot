@@ -238,6 +238,8 @@ public class CandleRingBuffer
             "1d" => TimeSpan.FromDays(1),
             "3d" => TimeSpan.FromDays(3),
             "1w" => TimeSpan.FromDays(7),
+            // Note: Using 30 days as approximation for monthly intervals
+            // This is acceptable for gap detection as it's used to identify significant gaps
             "1mo" or "1month" => TimeSpan.FromDays(30),
             _ => TimeSpan.FromMinutes(1) // Default to 1 minute
         };
