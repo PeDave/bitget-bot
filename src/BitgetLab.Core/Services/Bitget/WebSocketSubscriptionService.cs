@@ -1,6 +1,7 @@
 using BitgetLab.Core.Models;
 using BitgetLab.Core.Options;
 using System.Collections.Concurrent;
+using System.Threading.Channels;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -21,6 +22,29 @@ public class CandleSubscription
     public DateTime SubscribedAt { get; set; }
     public CandleDto? LatestCandle { get; set; }
     public CandleRingBuffer RingBuffer { get; set; } = null!;
+    public DateTime? LastOpenTime { get; set; }
+}
+
+/// <summary>
+/// Work item types for background queue processing
+/// </summary>
+internal enum BackgroundWorkType
+{
+    PersistCandles,
+    BackfillGap
+}
+
+/// <summary>
+/// Background work item for processing
+/// </summary>
+internal class BackgroundWorkItem
+{
+    public BackgroundWorkType Type { get; set; }
+    public string Symbol { get; set; } = string.Empty;
+    public string Interval { get; set; } = string.Empty;
+    public List<CandleDto>? Candles { get; set; }
+    public DateTime? GapStart { get; set; }
+    public DateTime? GapEnd { get; set; }
 }
 
 /// <summary>
@@ -65,6 +89,8 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
     private readonly ILogger<WebSocketSubscriptionService> _logger;
     private readonly SemaphoreSlim _subscriptionLock = new(1, 1);
     private volatile IBitgetSocketClient? _socketClient;
+    private readonly ConcurrentDictionary<string, byte> _activeBackfills = new(); // Track active backfills
+    private readonly Channel<BackgroundWorkItem> _workQueue;
 
     public WebSocketSubscriptionService(
         IBitgetSocketClientFactory socketClientFactory,
@@ -78,6 +104,12 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
         _candleRepository = candleRepository;
         _chartingOptions = chartingOptions.Value;
         _logger = logger;
+        
+        // Create bounded channel with capacity of 10000 work items
+        _workQueue = Channel.CreateBounded<BackgroundWorkItem>(new BoundedChannelOptions(10000)
+        {
+            FullMode = BoundedChannelFullMode.DropOldest
+        });
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -90,18 +122,26 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
             _socketClient = _socketClientFactory.CreateSocketClient();
             _logger.LogInformation("WebSocket client initialized");
 
-            // Keep the service running
+            // Start background worker task
+            var workerTask = Task.Run(() => ProcessWorkQueueAsync(stoppingToken), stoppingToken);
+
+            // Keep the service running and log metrics periodically
             while (!stoppingToken.IsCancellationRequested)
             {
                 await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
                 
-                // Log active subscriptions count
+                // Log active subscriptions and queue depth
                 var activeCount = _subscriptions.Count;
-                if (activeCount > 0)
+                var queueCount = _workQueue.Reader.Count;
+                
+                if (activeCount > 0 || queueCount > 0)
                 {
-                    _logger.LogDebug("Active WebSocket subscriptions: {Count}", activeCount);
+                    _logger.LogDebug("Active WebSocket subscriptions: {Count}, Queue depth: {QueueDepth}", 
+                        activeCount, queueCount);
                 }
             }
+            
+            await workerTask;
         }
         catch (OperationCanceledException)
         {
@@ -110,6 +150,110 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error in WebSocket Subscription Service");
+        }
+    }
+
+    private async Task ProcessWorkQueueAsync(CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Background work queue processor starting...");
+        
+        await foreach (var workItem in _workQueue.Reader.ReadAllAsync(cancellationToken))
+        {
+            try
+            {
+                switch (workItem.Type)
+                {
+                    case BackgroundWorkType.PersistCandles:
+                        if (_chartingOptions.EnablePersistence && _candleRepository != null && workItem.Candles != null)
+                        {
+                            await _candleRepository.UpsertCandlesAsync(
+                                workItem.Symbol, 
+                                workItem.Interval, 
+                                workItem.Candles, 
+                                cancellationToken);
+                        }
+                        break;
+                        
+                    case BackgroundWorkType.BackfillGap:
+                        await ProcessBackfillAsync(workItem, cancellationToken);
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing work item of type {Type} for {Symbol} {Interval}", 
+                    workItem.Type, workItem.Symbol, workItem.Interval);
+            }
+        }
+        
+        _logger.LogInformation("Background work queue processor stopped");
+    }
+
+    private async Task ProcessBackfillAsync(BackgroundWorkItem workItem, CancellationToken cancellationToken)
+    {
+        var backfillKey = GetSubscriptionKey(workItem.Symbol, workItem.Interval);
+        
+        // Check if already backfilling this subscription
+        if (!_activeBackfills.TryAdd(backfillKey, 0))
+        {
+            _logger.LogDebug("Backfill already in progress for {Symbol} {Interval}, skipping", 
+                workItem.Symbol, workItem.Interval);
+            return;
+        }
+
+        try
+        {
+            if (workItem.GapStart.HasValue && workItem.GapEnd.HasValue)
+            {
+                _logger.LogInformation("Backfilling gap for {Symbol} {Interval} from {Start} to {End}", 
+                    workItem.Symbol, workItem.Interval, workItem.GapStart, workItem.GapEnd);
+
+                var backfillCandles = await _candleService.GetCandlesAsync(
+                    workItem.Symbol,
+                    workItem.Interval,
+                    startTime: workItem.GapStart,
+                    endTime: workItem.GapEnd,
+                    limit: 1000,
+                    cancellationToken: cancellationToken);
+
+                var backfillList = backfillCandles.ToList();
+                if (backfillList.Count > 0)
+                {
+                    // Add to ring buffer if subscription still exists
+                    if (_subscriptions.TryGetValue(backfillKey, out var subscription))
+                    {
+                        subscription.RingBuffer.AddRange(backfillList);
+                        _logger.LogInformation("Backfilled {Count} candles for {Symbol} {Interval}", 
+                            backfillList.Count, workItem.Symbol, workItem.Interval);
+                    }
+
+                    // Persist if enabled (also enqueue to avoid blocking)
+                    if (_chartingOptions.EnablePersistence && _candleRepository != null)
+                    {
+                        EnqueueWork(new BackgroundWorkItem
+                        {
+                            Type = BackgroundWorkType.PersistCandles,
+                            Symbol = workItem.Symbol,
+                            Interval = workItem.Interval,
+                            Candles = backfillList
+                        });
+                    }
+                }
+            }
+        }
+        finally
+        {
+            // Remove backfill lock
+            _activeBackfills.TryRemove(backfillKey, out _);
+        }
+    }
+
+    private void EnqueueWork(BackgroundWorkItem workItem)
+    {
+        if (!_workQueue.Writer.TryWrite(workItem))
+        {
+            _logger.LogWarning("Failed to enqueue work item of type {Type} for {Symbol} {Interval} - queue may be full", 
+                workItem.Type, workItem.Symbol, workItem.Interval);
         }
     }
 
@@ -203,48 +347,39 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
                                 _logger.LogDebug("Updated candle for {Symbol} {Interval}: Close={Close}", 
                                     symbol, interval, candle.Close);
 
-                                // Gap detection and backfill (async, don't block)
-                                if (_chartingOptions.EnableGapDetection)
+                                // O(1) gap detection by checking lastOpenTime vs newOpenTime
+                                if (_chartingOptions.EnableGapDetection && subscription.LastOpenTime.HasValue)
                                 {
-                                    _ = Task.Run(async () =>
+                                    var expectedDuration = ParseIntervalToTimeSpan(interval);
+                                    var timeSinceLastCandle = candle.OpenTime - subscription.LastOpenTime.Value;
+                                    
+                                    // If gap detected (time difference > expected interval)
+                                    if (timeSinceLastCandle > expectedDuration)
                                     {
-                                        try
+                                        EnqueueWork(new BackgroundWorkItem
                                         {
-                                            await DetectAndBackfillGapsAsync(symbol, interval, subscription);
-                                        }
-                                        catch (Exception ex)
-                                        {
-                                            _logger.LogError(ex, "Error in gap detection for {Symbol} {Interval}", symbol, interval);
-                                        }
-                                    }, CancellationToken.None).ContinueWith(t =>
-                                    {
-                                        if (t.IsFaulted && t.Exception != null)
-                                        {
-                                            _logger.LogError(t.Exception, "Unhandled error in gap detection task for {Symbol} {Interval}", symbol, interval);
-                                        }
-                                    }, TaskScheduler.Default);
+                                            Type = BackgroundWorkType.BackfillGap,
+                                            Symbol = symbol,
+                                            Interval = interval,
+                                            GapStart = subscription.LastOpenTime.Value + expectedDuration,
+                                            GapEnd = candle.OpenTime
+                                        });
+                                    }
                                 }
+                                
+                                // Update last open time for next gap detection
+                                subscription.LastOpenTime = candle.OpenTime;
 
-                                // Persist to database if enabled
+                                // Enqueue persistence work
                                 if (_chartingOptions.EnablePersistence && _candleRepository != null)
                                 {
-                                    _ = Task.Run(async () =>
+                                    EnqueueWork(new BackgroundWorkItem
                                     {
-                                        try
-                                        {
-                                            await _candleRepository.UpsertCandleAsync(symbol, interval, candle, CancellationToken.None);
-                                        }
-                                        catch (Exception ex)
-                                        {
-                                            _logger.LogError(ex, "Error persisting candle for {Symbol} {Interval}", symbol, interval);
-                                        }
-                                    }, CancellationToken.None).ContinueWith(t =>
-                                    {
-                                        if (t.IsFaulted && t.Exception != null)
-                                        {
-                                            _logger.LogError(t.Exception, "Unhandled error in persistence task for {Symbol} {Interval}", symbol, interval);
-                                        }
-                                    }, TaskScheduler.Default);
+                                        Type = BackgroundWorkType.PersistCandles,
+                                        Symbol = symbol,
+                                        Interval = interval,
+                                        Candles = new List<CandleDto> { candle }
+                                    });
                                 }
                             }
                         }
@@ -428,60 +563,6 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
         }
     }
 
-    private async Task DetectAndBackfillGapsAsync(string symbol, string interval, CandleSubscription subscription)
-    {
-        try
-        {
-            var gaps = subscription.RingBuffer.DetectGaps(interval);
-            
-            if (gaps.Count == 0)
-            {
-                return;
-            }
-
-            _logger.LogInformation("Detected {Count} gaps for {Symbol} {Interval}", gaps.Count, symbol, interval);
-
-            foreach (var gap in gaps)
-            {
-                try
-                {
-                    _logger.LogInformation("Backfilling gap for {Symbol} {Interval} from {Start} to {End}", 
-                        symbol, interval, gap.Start, gap.End);
-
-                    var backfillCandles = await _candleService.GetCandlesAsync(
-                        symbol,
-                        interval,
-                        startTime: gap.Start,
-                        endTime: gap.End,
-                        limit: 1000,
-                        cancellationToken: CancellationToken.None);
-
-                    var backfillList = backfillCandles.ToList();
-                    if (backfillList.Count > 0)
-                    {
-                        subscription.RingBuffer.AddRange(backfillList);
-                        _logger.LogInformation("Backfilled {Count} candles for {Symbol} {Interval}", 
-                            backfillList.Count, symbol, interval);
-
-                        // Persist backfilled candles if enabled
-                        if (_chartingOptions.EnablePersistence && _candleRepository != null)
-                        {
-                            await _candleRepository.UpsertCandlesAsync(symbol, interval, backfillList, CancellationToken.None);
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to backfill gap for {Symbol} {Interval}", symbol, interval);
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error in gap detection for {Symbol} {Interval}", symbol, interval);
-        }
-    }
-
     private string GetSubscriptionKey(string symbol, string interval)
     {
         return $"{symbol.ToUpperInvariant()}:{interval.ToLowerInvariant()}";
@@ -504,6 +585,26 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
             "1w" => BitgetStreamKlineIntervalV2.OneWeek,
             "1mo" or "1month" => BitgetStreamKlineIntervalV2.OneMonth,
             _ => throw new ArgumentException($"Invalid interval: {interval}. Valid values: 1m, 5m, 15m, 30m, 1h, 4h, 6h, 12h, 1d, 3d, 1w, 1mo")
+        };
+    }
+
+    private TimeSpan ParseIntervalToTimeSpan(string interval)
+    {
+        return interval.ToLowerInvariant() switch
+        {
+            "1m" => TimeSpan.FromMinutes(1),
+            "5m" => TimeSpan.FromMinutes(5),
+            "15m" => TimeSpan.FromMinutes(15),
+            "30m" => TimeSpan.FromMinutes(30),
+            "1h" => TimeSpan.FromHours(1),
+            "4h" => TimeSpan.FromHours(4),
+            "6h" => TimeSpan.FromHours(6),
+            "12h" => TimeSpan.FromHours(12),
+            "1d" => TimeSpan.FromDays(1),
+            "3d" => TimeSpan.FromDays(3),
+            "1w" => TimeSpan.FromDays(7),
+            "1mo" or "1month" => TimeSpan.FromDays(30),
+            _ => TimeSpan.FromMinutes(1)
         };
     }
 }
