@@ -728,39 +728,6 @@ curl "http://localhost:3001/api/bitget/futures/trades?includeUsdc=false&symbol=B
 ```
 
 **Note**: All order history and trade endpoints require read-only API credentials and work in ReadOnly mode.
-**Endpoint**: `GET /api/bitget/account/valuation`
-
-Retrieves total account valuation across all account types (spot, p2p, futures, etc.) in USDT equivalent.
-
-**Response**:
-```json
-{
-  "success": true,
-  "data": [
-    {
-      "accountType": "spot",
-      "usdtBalance": 1000.50
-    },
-    {
-      "accountType": "usdt_futures",
-      "usdtBalance": 5000.25
-    },
-    {
-      "accountType": "usdc_futures",
-      "usdtBalance": 2000.75
-    }
-  ],
-  "count": 3
-}
-```
-
-**Example**:
-```bash
-# Get account valuation
-curl http://localhost:3001/api/bitget/account/valuation
-```
-
-**Note**: Both endpoints require read-only API credentials and work in ReadOnly mode.
 
 **Liquidation Information**: 
 - Liquidation price for open positions is available via the `/api/bitget/futures/positions` endpoint.

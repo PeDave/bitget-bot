@@ -391,8 +391,7 @@ public class FuturesOrderHistoryService : IFuturesOrderHistoryService
                 // For futures, fees is an array - we need to aggregate
                 var feeAsset = string.Empty;
                 var fee = 0m;
-                var feeDeduction = 0m;
-                var feeTotalDeduction = 0m;
+                var totalDeduction = 0m;
 
                 if (t.Fees != null && t.Fees.Length > 0)
                 {
@@ -400,9 +399,8 @@ public class FuturesOrderHistoryService : IFuturesOrderHistoryService
                     feeAsset = t.Fees[0].FeeAsset;
                     fee = t.Fees[0].TotalFee;
                     
-                    // Aggregate deduction amounts from all fee entries
-                    feeDeduction = t.Fees.Sum(f => f.TotalDeductionFee ?? 0m);
-                    feeTotalDeduction = t.Fees.Sum(f => f.TotalDeductionFee ?? 0m);
+                    // Sum total deduction from all fee entries
+                    totalDeduction = t.Fees.Sum(f => f.TotalDeductionFee ?? 0m);
                 }
 
                 trades.Add(new UserTradeDto
@@ -417,8 +415,8 @@ public class FuturesOrderHistoryService : IFuturesOrderHistoryService
                     TradeTime = t.CreateTime,
                     FeeAsset = feeAsset,
                     Fee = fee,
-                    FeeDeduction = feeDeduction,
-                    FeeTotalDeduction = feeTotalDeduction,
+                    FeeDeduction = totalDeduction, // Use totalDeduction for both fields as per Bitget.Net model
+                    FeeTotalDeduction = totalDeduction,
                     Source = "futures",
                     ProductType = productTypeName,
                     MarginAsset = marginAsset
