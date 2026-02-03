@@ -25,6 +25,11 @@ builder.Services.AddSingleton<ISpotOrderHistoryService, SpotOrderHistoryService>
 builder.Services.AddSingleton<IFuturesOrderHistoryService, FuturesOrderHistoryService>();
 builder.Services.AddSingleton<ICopyTradingService, CopyTradingService>();
 
+// Register charting services
+builder.Services.AddSingleton<ICandleService, CandleService>();
+builder.Services.AddSingleton<IIndicatorService, IndicatorService>();
+builder.Services.AddSingleton<IWebSocketSubscriptionService, WebSocketSubscriptionService>();
+
 // Register system services
 builder.Services.AddSingleton<ISystemMetricsService, SystemMetricsService>();
 builder.Services.AddSingleton<ISystemServicesService, SystemServicesService>();
