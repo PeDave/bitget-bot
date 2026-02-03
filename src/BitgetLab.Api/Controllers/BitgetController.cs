@@ -22,6 +22,7 @@ public class BitgetController : ControllerBase
     private readonly ICandleService _candleService;
     private readonly IIndicatorService _indicatorService;
     private readonly IWebSocketSubscriptionService _subscriptionService;
+    private readonly ICandleRepository? _candleRepository;
     private readonly ILogger<BitgetController> _logger;
 
     public BitgetController(
@@ -39,7 +40,8 @@ public class BitgetController : ControllerBase
         ICandleService candleService,
         IIndicatorService indicatorService,
         IWebSocketSubscriptionService subscriptionService,
-        ILogger<BitgetController> logger)
+        ILogger<BitgetController> logger,
+        ICandleRepository? candleRepository = null)
     {
         _marketDataService = marketDataService;
         _tradingService = tradingService;
@@ -55,6 +57,7 @@ public class BitgetController : ControllerBase
         _candleService = candleService;
         _indicatorService = indicatorService;
         _subscriptionService = subscriptionService;
+        _candleRepository = candleRepository;
         _logger = logger;
     }
 
@@ -965,6 +968,195 @@ public class BitgetController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to get candles for {Symbol}", symbol);
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
+    }
+
+    [HttpGet("market/candles/stats")]
+    public async Task<IActionResult> GetCandleStats(
+        [FromQuery] string symbol,
+        [FromQuery] string interval,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(symbol))
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Symbol parameter is required"
+            });
+        }
+
+        if (string.IsNullOrWhiteSpace(interval))
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Interval parameter is required"
+            });
+        }
+
+        try
+        {
+            if (_candleRepository == null)
+            {
+                return Ok(new
+                {
+                    success = true,
+                    data = new
+                    {
+                        dbEnabled = false,
+                        dbAvailable = false,
+                        count = 0,
+                        minOpenTime = (DateTime?)null,
+                        maxOpenTime = (DateTime?)null,
+                        lastUpdatedAt = (DateTime?)null
+                    },
+                    count = 0
+                });
+            }
+
+            var stats = await _candleRepository.GetStatsAsync(symbol, interval, cancellationToken);
+            
+            return Ok(new
+            {
+                success = true,
+                data = new
+                {
+                    dbEnabled = stats.DbEnabled,
+                    dbAvailable = stats.DbAvailable,
+                    count = stats.Count,
+                    minOpenTime = stats.MinOpenTime,
+                    maxOpenTime = stats.MaxOpenTime,
+                    lastUpdatedAt = stats.LastUpdatedAt
+                },
+                count = stats.Count
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get candle stats for {Symbol} {Interval}", symbol, interval);
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
+    }
+
+    [HttpPost("market/backfill")]
+    public async Task<IActionResult> BackfillCandles(
+        [FromBody] CandleBackfillRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (request == null)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Request body is required"
+            });
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Symbol))
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Symbol is required"
+            });
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Interval))
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Interval is required"
+            });
+        }
+
+        if (!request.StartTime.HasValue || !request.EndTime.HasValue)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "StartTime and EndTime are required"
+            });
+        }
+
+        if (request.StartTime >= request.EndTime)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "StartTime must be before EndTime"
+            });
+        }
+
+        try
+        {
+            var limit = request.Limit ?? 1000;
+            if (limit > 1000)
+            {
+                limit = 1000;
+            }
+
+            _logger.LogInformation("Backfill requested for {Symbol} {Interval} from {Start} to {End} with limit {Limit}", 
+                request.Symbol, request.Interval, request.StartTime, request.EndTime, limit);
+
+            var candles = await _candleService.GetCandlesAsync(
+                request.Symbol,
+                request.Interval,
+                startTime: request.StartTime,
+                endTime: request.EndTime,
+                limit: limit,
+                cancellationToken: cancellationToken);
+
+            var candleList = candles.ToList();
+            
+            return Ok(new
+            {
+                success = true,
+                data = new
+                {
+                    symbol = request.Symbol,
+                    interval = request.Interval,
+                    startTime = request.StartTime,
+                    endTime = request.EndTime,
+                    candlesBackfilled = candleList.Count
+                },
+                count = candleList.Count
+            });
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Invalid arguments for backfill");
+            return BadRequest(new
+            {
+                success = false,
+                error = ex.Message
+            });
+        }
+        catch (BitgetApiException ex)
+        {
+            _logger.LogError(ex, "Bitget API error during backfill for {Symbol}", request.Symbol);
+            return StatusCode(502, new
+            {
+                success = false,
+                error = $"Failed to backfill candles for {request.Symbol} from Bitget",
+                message = ex.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to backfill candles for {Symbol} {Interval}", request.Symbol, request.Interval);
             return StatusCode(500, new
             {
                 success = false,
