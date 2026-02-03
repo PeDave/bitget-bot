@@ -1791,8 +1791,8 @@ public class BitgetController : ControllerBase
                 });
             }
 
-            // Validate grid parameters exist
-            if (request.Grid == null || request.Grid.Count == 0)
+            // Validate grid parameters
+            if (request.Grid == null)
             {
                 return BadRequest(new
                 {
@@ -1802,12 +1802,7 @@ public class BitgetController : ControllerBase
                 });
             }
 
-            // Extract grid parameters
-            var periods = GetGridValues<int>(request.Grid, "period");
-            var oversoldThresholds = GetGridValues<int>(request.Grid, "oversoldThreshold");
-            var overboughtThresholds = GetGridValues<int>(request.Grid, "overboughtThreshold");
-
-            if (periods.Count == 0 || oversoldThresholds.Count == 0 || overboughtThresholds.Count == 0)
+            if (request.Grid.Period.Count == 0 || request.Grid.OversoldThreshold.Count == 0 || request.Grid.OverboughtThreshold.Count == 0)
             {
                 return BadRequest(new
                 {
@@ -1816,6 +1811,10 @@ public class BitgetController : ControllerBase
                     message = "Grid must contain period, oversoldThreshold, and overboughtThreshold arrays"
                 });
             }
+
+            var periods = request.Grid.Period;
+            var oversoldThresholds = request.Grid.OversoldThreshold;
+            var overboughtThresholds = request.Grid.OverboughtThreshold;
 
             // Generate parameter combinations with oversold < overbought constraint
             var combinations = new List<Dictionary<string, object>>();
@@ -1960,38 +1959,5 @@ public class BitgetController : ControllerBase
                 message = ex.Message
             });
         }
-    }
-
-    private List<T> GetGridValues<T>(Dictionary<string, List<object>> grid, string key)
-    {
-        if (!grid.TryGetValue(key, out var values))
-        {
-            return new List<T>();
-        }
-
-        var result = new List<T>();
-        foreach (var value in values)
-        {
-            try
-            {
-                if (value is T typedValue)
-                {
-                    result.Add(typedValue);
-                }
-                else
-                {
-                    var converted = Convert.ChangeType(value, typeof(T));
-                    if (converted is T convertedValue)
-                    {
-                        result.Add(convertedValue);
-                    }
-                }
-            }
-            catch
-            {
-                // Skip invalid values
-            }
-        }
-        return result;
     }
 }

@@ -80,6 +80,16 @@ public class RunBacktestRequest
 }
 
 /// <summary>
+/// Grid parameters for RSI strategy sweep
+/// </summary>
+public class RsiGridParameters
+{
+    public List<int> Period { get; set; } = new();
+    public List<int> OversoldThreshold { get; set; } = new();
+    public List<int> OverboughtThreshold { get; set; } = new();
+}
+
+/// <summary>
 /// Request to run a parameter sweep backtest
 /// </summary>
 public class SweepBacktestRequest
@@ -89,7 +99,7 @@ public class SweepBacktestRequest
     public DateTime StartTime { get; set; }
     public DateTime EndTime { get; set; }
     public string Strategy { get; set; } = string.Empty;
-    public Dictionary<string, List<object>> Grid { get; set; } = new();
+    public RsiGridParameters Grid { get; set; } = new();
     public decimal? FeeBps { get; set; }
     public decimal? SlippageBps { get; set; }
     public decimal? InitialBalance { get; set; }
