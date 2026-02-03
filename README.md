@@ -1161,6 +1161,40 @@ git add vendor/Bitget.Net
 git commit -m "Update Bitget.Net to latest version"
 ```
 
+### Gap Detection and Backfill
+
+The WebSocket subscription service includes automatic gap detection and backfill to ensure data continuity:
+
+**How it works**:
+- When a new candle arrives via WebSocket, the service compares its OpenTime with the last processed candle
+- A gap is detected only if the time difference is **at least 2x the expected interval** (e.g., 2 minutes for 1m candles)
+- This threshold reduces false positives from irregular updates and network delays
+
+**Behavior**:
+- **Same-candle updates**: Updates with the same OpenTime as the last candle are treated as normal updates (e.g., updating Close/Volume)
+- **Out-of-order candles**: Older candles are added to the ring buffer but don't trigger gap detection
+- **Strictly newer candles**: Only candles with OpenTime strictly greater than the last are considered for gap detection
+
+**Backfill protection**:
+- **Cooldown period**: 60 seconds between backfill attempts per subscription
+- **Active backfill guard**: Prevents re-queueing the same gap while a backfill is in progress
+- **Channel-based queue**: Backfill work is queued and processed sequentially to avoid storms
+
+**Configuration** (in `appsettings.json`):
+```json
+{
+  "Charting": {
+    "EnableGapDetection": true,
+    "BufferSize": 500
+  }
+}
+```
+
+**Logging**:
+- Gap detection events: `Debug` level
+- Backfill start/end: `Information` level
+- Skip reasons (cooldown, already active): `Trace` level
+
 ## 🤝 Contributing
 
 1. Fork the repository
