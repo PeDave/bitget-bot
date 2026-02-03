@@ -201,6 +201,112 @@ psql -U postgres -d bitgetlab -f ops/db/002_create_backtest_tables.sql
 }
 ```
 
+### Parameter Sweep for RSI Strategy
+
+**Endpoint:** `POST /api/bitget/backtests/sweep`
+
+Run multiple backtest combinations in parallel to find optimal parameters.
+
+**Request Body:**
+```json
+{
+  "symbol": "BTCUSDT",
+  "interval": "1h",
+  "startTime": "2026-01-01T00:00:00Z",
+  "endTime": "2026-02-01T00:00:00Z",
+  "strategy": "rsi",
+  "grid": {
+    "period": [7, 10, 14, 21],
+    "oversoldThreshold": [20, 30, 40],
+    "overboughtThreshold": [60, 70, 80]
+  },
+  "initialBalance": 1000,
+  "feeBps": 10,
+  "slippageBps": 5,
+  "topN": 10,
+  "sortBy": "netPnl",
+  "maxConcurrency": 4
+}
+```
+
+**Parameters:**
+- `symbol`: Trading pair (required)
+- `interval`: Candle interval (required)
+- `startTime`: Start of backtest period (required)
+- `endTime`: End of backtest period (required)
+- `strategy`: Must be "rsi" (only RSI supported currently)
+- `grid`: Dictionary of parameter arrays to sweep
+  - Each combination is tested where `oversoldThreshold < overboughtThreshold`
+- `initialBalance`: Starting capital (default: 1000)
+- `feeBps`: Trading fee in basis points (default: 10)
+- `slippageBps`: Slippage in basis points (default: 5)
+- `topN`: Number of best results to return (default: 10)
+- `sortBy`: Metric to sort by - "netPnl" (default), "winRate", "returnPercent", "maxDrawdown", "totalTrades"
+- `maxConcurrency`: Max parallel backtests (1-10, default: 1)
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "backtestId": "550e8400-e29b-41d4-a716-446655440000",
+      "parameters": {
+        "period": 14,
+        "oversoldThreshold": 30,
+        "overboughtThreshold": 70
+      },
+      "summary": {
+        "totalTrades": 15,
+        "winningTrades": 9,
+        "losingTrades": 6,
+        "winRate": 60.0,
+        "netPnl": 234.56,
+        "maxDrawdown": 5.2,
+        "initialBalance": 1000,
+        "finalBalance": 1234.56,
+        "returnPercent": 23.46,
+        "equityCurve": [...]
+      }
+    }
+  ],
+  "count": 10,
+  "meta": {
+    "totalCombinations": 36,
+    "completed": 35,
+    "failed": 1
+  }
+}
+```
+
+**Notes:**
+- Each backtest is persisted to the database with a unique `backtestId`
+- Results can be retrieved later using the standard `GET /api/bitget/backtests/{id}` endpoint
+- Invalid combinations (oversold >= overbought) are automatically filtered out
+- Failed backtests are logged but don't stop the sweep
+- Use `maxConcurrency` to control server load (higher values = faster but more resource intensive)
+
+**Example with curl:**
+```bash
+curl -X POST http://localhost:3001/api/bitget/backtests/sweep \
+  -H "Content-Type: application/json" \
+  -d '{
+    "symbol": "BTCUSDT",
+    "interval": "1h",
+    "startTime": "2026-01-01T00:00:00Z",
+    "endTime": "2026-02-01T00:00:00Z",
+    "strategy": "rsi",
+    "grid": {
+      "period": [7, 14, 21],
+      "oversoldThreshold": [20, 30],
+      "overboughtThreshold": [70, 80]
+    },
+    "topN": 5,
+    "sortBy": "returnPercent",
+    "maxConcurrency": 2
+  }'
+```
+
 ## Strategies
 
 ### EMA Crossover Strategy

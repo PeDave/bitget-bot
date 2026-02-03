@@ -1764,4 +1764,234 @@ public class BitgetController : ControllerBase
             });
         }
     }
+
+    [HttpPost("backtests/sweep")]
+    public async Task<IActionResult> SweepBacktest([FromBody] SweepBacktestRequest request, CancellationToken cancellationToken)
+    {
+        if (_backtestService == null)
+        {
+            return StatusCode(503, new
+            {
+                success = false,
+                error = "Backtest service not available",
+                message = "Backtest functionality requires database configuration"
+            });
+        }
+
+        try
+        {
+            // Validate strategy
+            if (request.Strategy?.ToLowerInvariant() != "rsi")
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    error = "Invalid strategy",
+                    message = "Only 'rsi' strategy is supported for parameter sweep"
+                });
+            }
+
+            // Validate grid parameters exist
+            if (request.Grid == null || request.Grid.Count == 0)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    error = "Invalid request",
+                    message = "Grid parameters are required"
+                });
+            }
+
+            // Extract grid parameters
+            var periods = GetGridValues<int>(request.Grid, "period");
+            var oversoldThresholds = GetGridValues<int>(request.Grid, "oversoldThreshold");
+            var overboughtThresholds = GetGridValues<int>(request.Grid, "overboughtThreshold");
+
+            if (periods.Count == 0 || oversoldThresholds.Count == 0 || overboughtThresholds.Count == 0)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    error = "Invalid request",
+                    message = "Grid must contain period, oversoldThreshold, and overboughtThreshold arrays"
+                });
+            }
+
+            // Generate parameter combinations with oversold < overbought constraint
+            var combinations = new List<Dictionary<string, object>>();
+            foreach (var period in periods)
+            {
+                foreach (var oversold in oversoldThresholds)
+                {
+                    foreach (var overbought in overboughtThresholds)
+                    {
+                        if (oversold < overbought)
+                        {
+                            combinations.Add(new Dictionary<string, object>
+                            {
+                                { "period", period },
+                                { "oversoldThreshold", oversold },
+                                { "overboughtThreshold", overbought }
+                            });
+                        }
+                    }
+                }
+            }
+
+            if (combinations.Count == 0)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    error = "Invalid request",
+                    message = "No valid parameter combinations (oversoldThreshold must be < overboughtThreshold)"
+                });
+            }
+
+            _logger.LogInformation("Starting parameter sweep with {Count} combinations", combinations.Count);
+
+            // Execute backtests with concurrency control
+            var maxConcurrency = Math.Max(1, Math.Min(request.MaxConcurrency, 10)); // Cap at 10
+            var semaphore = new SemaphoreSlim(maxConcurrency);
+            var results = new List<SweepResultItem>();
+            var completed = 0;
+            var failed = 0;
+            var lockObj = new object();
+
+            var tasks = combinations.Select(async parameters =>
+            {
+                await semaphore.WaitAsync(cancellationToken);
+                try
+                {
+                    var backtestRequest = new RunBacktestRequest
+                    {
+                        Symbol = request.Symbol,
+                        Interval = request.Interval,
+                        StartTime = request.StartTime,
+                        EndTime = request.EndTime,
+                        Strategy = request.Strategy,
+                        Parameters = parameters,
+                        FeeBps = request.FeeBps,
+                        SlippageBps = request.SlippageBps,
+                        InitialBalance = request.InitialBalance
+                    };
+
+                    var backtest = await _backtestService.RunBacktestAsync(backtestRequest, cancellationToken);
+                    
+                    lock (lockObj)
+                    {
+                        if (backtest.Status == BacktestStatus.Completed && backtest.Summary != null)
+                        {
+                            results.Add(new SweepResultItem
+                            {
+                                BacktestId = backtest.Id,
+                                Parameters = parameters,
+                                Summary = backtest.Summary
+                            });
+                            completed++;
+                        }
+                        else
+                        {
+                            failed++;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Backtest failed for parameters: {@Parameters}", parameters);
+                    lock (lockObj)
+                    {
+                        failed++;
+                    }
+                }
+                finally
+                {
+                    semaphore.Release();
+                }
+            });
+
+            await Task.WhenAll(tasks);
+
+            _logger.LogInformation("Parameter sweep completed: {Completed} completed, {Failed} failed", completed, failed);
+
+            // Sort results by the specified metric
+            var sortedResults = request.SortBy?.ToLowerInvariant() switch
+            {
+                "winrate" => results.OrderByDescending(r => r.Summary.WinRate).ToList(),
+                "returnpercent" => results.OrderByDescending(r => r.Summary.ReturnPercent).ToList(),
+                "maxdrawdown" => results.OrderBy(r => r.Summary.MaxDrawdown).ToList(),
+                "totaltrades" => results.OrderByDescending(r => r.Summary.TotalTrades).ToList(),
+                _ => results.OrderByDescending(r => r.Summary.NetPnl).ToList()
+            };
+
+            // Take top N results
+            var topResults = sortedResults.Take(Math.Max(1, request.TopN)).ToList();
+
+            return Ok(new
+            {
+                success = true,
+                data = topResults,
+                count = topResults.Count,
+                meta = new
+                {
+                    totalCombinations = combinations.Count,
+                    completed = completed,
+                    failed = failed
+                }
+            });
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Invalid sweep backtest request");
+            return BadRequest(new
+            {
+                success = false,
+                error = "Invalid request",
+                message = ex.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to run sweep backtest");
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
+    }
+
+    private List<T> GetGridValues<T>(Dictionary<string, List<object>> grid, string key)
+    {
+        if (!grid.TryGetValue(key, out var values))
+        {
+            return new List<T>();
+        }
+
+        var result = new List<T>();
+        foreach (var value in values)
+        {
+            try
+            {
+                if (value is T typedValue)
+                {
+                    result.Add(typedValue);
+                }
+                else
+                {
+                    var converted = Convert.ChangeType(value, typeof(T));
+                    if (converted is T convertedValue)
+                    {
+                        result.Add(convertedValue);
+                    }
+                }
+            }
+            catch
+            {
+                // Skip invalid values
+            }
+        }
+        return result;
+    }
 }

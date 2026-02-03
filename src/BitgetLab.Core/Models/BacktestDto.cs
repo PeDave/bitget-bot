@@ -80,6 +80,56 @@ public class RunBacktestRequest
 }
 
 /// <summary>
+/// Request to run a parameter sweep backtest
+/// </summary>
+public class SweepBacktestRequest
+{
+    public string Symbol { get; set; } = string.Empty;
+    public string Interval { get; set; } = string.Empty;
+    public DateTime StartTime { get; set; }
+    public DateTime EndTime { get; set; }
+    public string Strategy { get; set; } = string.Empty;
+    public Dictionary<string, List<object>> Grid { get; set; } = new();
+    public decimal? FeeBps { get; set; }
+    public decimal? SlippageBps { get; set; }
+    public decimal? InitialBalance { get; set; }
+    public int TopN { get; set; } = 10;
+    public string SortBy { get; set; } = "netPnl";
+    public int MaxConcurrency { get; set; } = 1;
+}
+
+/// <summary>
+/// Result item from parameter sweep
+/// </summary>
+public class SweepResultItem
+{
+    public Guid BacktestId { get; set; }
+    public Dictionary<string, object> Parameters { get; set; } = new();
+    public BacktestSummary Summary { get; set; } = new();
+}
+
+/// <summary>
+/// Response from parameter sweep
+/// </summary>
+public class SweepBacktestResponse
+{
+    public bool Success { get; set; }
+    public List<SweepResultItem> Data { get; set; } = new();
+    public int Count { get; set; }
+    public SweepMetadata? Meta { get; set; }
+}
+
+/// <summary>
+/// Metadata about sweep execution
+/// </summary>
+public class SweepMetadata
+{
+    public int TotalCombinations { get; set; }
+    public int Completed { get; set; }
+    public int Failed { get; set; }
+}
+
+/// <summary>
 /// Strategy types
 /// </summary>
 public static class StrategyTypes
