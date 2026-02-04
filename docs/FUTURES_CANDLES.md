@@ -163,16 +163,37 @@ Both spot and futures markets support the same intervals:
    - Enum with Spot and Futures values
    - Helper methods for parsing and conversion
 
-2. **CandleService** (`src/BitgetLab.Core/Services/Bitget/CandleService.cs`)
-   - Routes to `FetchFromSpotApiAsync` or `FetchFromFuturesApiAsync` based on market
-   - Uses `client.SpotApiV2.ExchangeData.GetKlinesAsync` for spot
-   - Uses `client.FuturesApiV2.ExchangeData.GetHistoricalKlinesAsync` for futures
-   - **Note**: Futures uses historical endpoint to support startTime/endTime ranges (GetKlinesAsync fails with parameter verification errors when dates are supplied)
+2. **BitgetFuturesOptions** (`src/BitgetLab.Core/Options/BitgetFuturesOptions.cs`)
+   - Configuration class for futures public API settings
+   - `ProductType`: Default `usdt-futures`
+   - `PublicRestBaseUrl`: Default `https://api.bitget.com`
 
-3. **Database Schema**
+3. **CandleService** (`src/BitgetLab.Core/Services/Bitget/CandleService.cs`)
+   - Routes to `FetchFromSpotApiAsync` or `FetchFromPublicHistoryApiAsync` based on market
+   - Uses `client.SpotApiV2.ExchangeData.GetKlinesAsync` for spot
+   - **Futures now uses direct HTTP calls** to Bitget public REST API `/api/v2/mix/market/history-candles`
+   - **Important changes**:
+     - Bypasses Bitget.Net SDK for futures to use correct API format
+     - `MapIntervalToGranularity()` converts intervals: 1h→1H, 4h→4H, 1d→1D (case-sensitive)
+     - Converts DateTime to Unix milliseconds for timestamps
+     - Implements backward-stepping pagination (endTime steps backwards)
+     - Uses HttpClient for direct API calls
+   - Fixes the "Parameter verification failed startTime || endTime" error for 1h intervals
+
+4. **Database Schema**
    - Added `market_type VARCHAR(20)` column to `candles` table
    - Added `market VARCHAR(20)` column to `backtests` table
    - Updated indexes to include market type
+
+5. **Configuration** (`appsettings.json`)
+   ```json
+   "Bitget": {
+     "Futures": {
+       "ProductType": "usdt-futures",
+       "PublicRestBaseUrl": "https://api.bitget.com"
+     }
+   }
+   ```
 
 ### Backward Compatibility
 
@@ -220,6 +241,17 @@ curl -X POST http://localhost:3001/api/bitget/backtests/run \
 ```
 
 ## Troubleshooting
+
+### Issue: "Parameter verification failed startTime || endTime" (FIXED)
+
+**Root cause:** The Bitget.Net SDK was not correctly formatting the interval and timestamp parameters for the futures API.
+
+**Solution (implemented):** The system now bypasses the SDK and makes direct HTTP calls to Bitget's public REST API with:
+- Correct granularity strings (case-sensitive: `1H` instead of `1h`)
+- Unix millisecond timestamps instead of DateTime objects
+- Proper backward-stepping pagination for range queries
+
+This fix ensures that both `1h` and `1m` intervals work correctly for futures range queries.
 
 ### Issue: "Invalid market type" error
 

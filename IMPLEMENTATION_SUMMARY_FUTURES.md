@@ -5,10 +5,15 @@ This implementation adds support for fetching and backtesting on futures market 
 
 ## Changes Made
 
-### 1. Core Models
+### 1. Core Models and Options
 - **MarketType.cs** - New enum with Spot and Futures values
   - Helper methods: `ParseMarketType()`, `ToStringValue()`, `ToProductType()`
   - Provides type-safe market selection throughout the codebase
+
+- **BitgetFuturesOptions.cs** - Configuration for futures public API (NEW)
+  - `ProductType` - Default: `usdt-futures`
+  - `PublicRestBaseUrl` - Default: `https://api.bitget.com`
+  - Registered in DI with section name `Bitget:Futures`
 
 ### 2. Database Schema
 - **002_add_market_type_to_candles.sql** - Adds `market_type` column to candles table
@@ -35,12 +40,15 @@ This implementation adds support for fetching and backtesting on futures market 
   - `GetCandlesAsync()` now accepts `MarketType market = MarketType.Spot`
 
 - **CandleService.cs** - Routing and API calls
-  - Routes to `FetchFromSpotApiAsync()` or `FetchFromFuturesApiAsync()`
+  - Routes to `FetchFromSpotApiAsync()` or `FetchFromPublicHistoryApiAsync()` based on market
   - Uses `client.SpotApiV2.ExchangeData.GetKlinesAsync()` for spot
-  - Uses `client.FuturesApiV2.ExchangeData.GetHistoricalKlinesAsync()` for futures
-  - **Note**: Futures uses historical endpoint to support startTime/endTime ranges (GetKlinesAsync fails with parameter verification errors)
-  - Added `ParseFuturesInterval()` for futures-specific interval enum
-  - Pagination works for both markets
+  - **Futures now uses direct HTTP calls to Bitget public REST API** `/api/v2/mix/market/history-candles`
+  - **Important**: Bypasses Bitget.Net SDK for futures to use correct granularity strings (case-sensitive: `1H` not `1h`) and millisecond timestamps
+  - Added `MapIntervalToGranularity()` to map API intervals to Bitget granularity format (1h→1H, 4h→4H, 1d→1D)
+  - Added `FetchFromPublicHistoryApiAsync()` for direct HTTP calls with proper timestamp conversion
+  - Futures pagination uses backward-stepping (endTime stepping backwards by minOpenTime-1ms)
+  - Spot pagination uses forward-stepping (startTime stepping forwards)
+  - Both markets support deduplication and range queries
 
 ### 5. Backtest Integration
 - **BacktestDto.cs** - Added `Market` field
@@ -67,7 +75,23 @@ This implementation adds support for fetching and backtesting on futures market 
   - `POST /api/bitget/backtests/run` - Accepts `market` in request body
   - `POST /api/bitget/backtests/sweep` - Accepts `market` in request body
 
-### 7. Documentation
+### 7. Configuration
+- **Program.cs** - Dependency injection setup
+  - Registers `BitgetFuturesOptions` from configuration
+  - Registers `HttpClient` for direct REST API calls
+  - `CandleService` constructor updated to accept `HttpClient` and futures options
+
+- **appsettings.json** - Configuration file
+  ```json
+  "Bitget": {
+    "Futures": {
+      "ProductType": "usdt-futures",
+      "PublicRestBaseUrl": "https://api.bitget.com"
+    }
+  }
+  ```
+
+### 8. Documentation
 - **FUTURES_CANDLES.md** - Comprehensive usage guide
   - API examples for spot and futures candles
   - Backtest examples with market selection
@@ -99,6 +123,21 @@ curl -X POST http://localhost:3001/api/bitget/backtests/run \
 ```
 
 ## Technical Details
+
+### Futures API Implementation
+- **Direct HTTP calls** to Bitget public REST API for futures (bypassing Bitget.Net SDK)
+- **Endpoint**: `https://api.bitget.com/api/v2/mix/market/history-candles`
+- **Parameters**:
+  - `symbol`: Trading pair (e.g., BTCUSDT)
+  - `granularity`: Case-sensitive interval string (1H, 4H, 1D, etc.)
+  - `productType`: usdt-futures (configurable)
+  - `limit`: Max 1000 candles per request
+  - `startTime`: Unix milliseconds (optional)
+  - `endTime`: Unix milliseconds (optional)
+- **Granularity mapping**: 1h→1H, 4h→4H, 6h→6H, 12h→12H, 1d→1D, 3d→3D, 1w→1W, 1mo→1M
+- **Timestamp conversion**: DateTime converted to Unix milliseconds
+- **Backward pagination**: For range queries, steps backwards from endTime using (minOpenTime-1ms)
+- **Deduplication**: Uses dictionary with OpenTime as key to prevent duplicates
 
 ### Market Separation
 - Spot and futures candles are completely separate in the database
