@@ -16,6 +16,7 @@ public interface ICandleRepository
         DateTime? startTime = null,
         DateTime? endTime = null,
         int limit = 500,
+        MarketType market = MarketType.Spot,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -25,6 +26,7 @@ public interface ICandleRepository
         string symbol,
         string interval,
         CandleDto candle,
+        MarketType market = MarketType.Spot,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -34,6 +36,7 @@ public interface ICandleRepository
         string symbol,
         string interval,
         IEnumerable<CandleDto> candles,
+        MarketType market = MarketType.Spot,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -47,5 +50,6 @@ public interface ICandleRepository
     Task<CandleStatsDto> GetStatsAsync(
         string symbol,
         string interval,
+        MarketType market = MarketType.Spot,
         CancellationToken cancellationToken = default);
 }

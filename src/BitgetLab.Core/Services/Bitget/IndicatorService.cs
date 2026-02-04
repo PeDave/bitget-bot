@@ -57,7 +57,7 @@ public class IndicatorService : IIndicatorService
         // Fetch enough candles to compute indicators (need extra for warmup)
         var requiredCandles = limit + period + 100; // Extra buffer for warmup
         var candles = await _candleService.GetCandlesAsync(
-            symbol, interval, startTime, endTime, requiredCandles, cancellationToken);
+            symbol, interval, startTime, endTime, requiredCandles, MarketType.Spot, cancellationToken);
 
         var candleList = candles.OrderBy(c => c.OpenTime).ToList();
 

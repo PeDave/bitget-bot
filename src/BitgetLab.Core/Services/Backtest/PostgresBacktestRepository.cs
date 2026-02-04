@@ -58,8 +58,8 @@ public class PostgresBacktestRepository : IBacktestRepository
         await connection.OpenAsync(cancellationToken);
 
         var sql = @"
-            INSERT INTO backtests (id, created_at, symbol, interval, start_time, end_time, strategy, parameters, status, summary, error)
-            VALUES (@id, @created_at, @symbol, @interval, @start_time, @end_time, @strategy, @parameters::jsonb, @status, @summary::jsonb, @error)
+            INSERT INTO backtests (id, created_at, symbol, interval, start_time, end_time, strategy, parameters, status, market, summary, error)
+            VALUES (@id, @created_at, @symbol, @interval, @start_time, @end_time, @strategy, @parameters::jsonb, @status, @market, @summary::jsonb, @error)
             RETURNING id";
 
         await using var command = new NpgsqlCommand(sql, connection);
@@ -75,6 +75,7 @@ public class PostgresBacktestRepository : IBacktestRepository
         command.Parameters.AddWithValue("@strategy", backtest.Strategy);
         command.Parameters.AddWithValue("@parameters", JsonSerializer.Serialize(backtest.Parameters));
         command.Parameters.AddWithValue("@status", backtest.Status);
+        command.Parameters.AddWithValue("@market", backtest.Market);
         command.Parameters.AddWithValue("@summary", backtest.Summary != null ? JsonSerializer.Serialize(backtest.Summary) : DBNull.Value);
         command.Parameters.AddWithValue("@error", (object?)backtest.Error ?? DBNull.Value);
 
@@ -117,7 +118,7 @@ public class PostgresBacktestRepository : IBacktestRepository
         await connection.OpenAsync(cancellationToken);
 
         var sql = @"
-            SELECT id, created_at, symbol, interval, start_time, end_time, strategy, parameters, status, summary, error
+            SELECT id, created_at, symbol, interval, start_time, end_time, strategy, parameters, status, market, summary, error
             FROM backtests
             WHERE id = @id";
 
@@ -150,7 +151,7 @@ public class PostgresBacktestRepository : IBacktestRepository
         await connection.OpenAsync(cancellationToken);
 
         var sql = @"
-            SELECT id, created_at, symbol, interval, start_time, end_time, strategy, parameters, status, summary, error
+            SELECT id, created_at, symbol, interval, start_time, end_time, strategy, parameters, status, market, summary, error
             FROM backtests
             WHERE 1=1";
 
@@ -277,7 +278,7 @@ public class PostgresBacktestRepository : IBacktestRepository
     private BacktestDto MapBacktest(NpgsqlDataReader reader)
     {
         var parametersJson = reader.GetString(7);
-        var summaryJson = reader.IsDBNull(9) ? null : reader.GetString(9);
+        var summaryJson = reader.IsDBNull(10) ? null : reader.GetString(10);
 
         return new BacktestDto
         {
@@ -290,8 +291,9 @@ public class PostgresBacktestRepository : IBacktestRepository
             Strategy = reader.GetString(6),
             Parameters = JsonSerializer.Deserialize<Dictionary<string, object>>(parametersJson) ?? new(),
             Status = reader.GetString(8),
+            Market = reader.GetString(9),
             Summary = summaryJson != null ? JsonSerializer.Deserialize<BacktestSummary>(summaryJson) : null,
-            Error = reader.IsDBNull(10) ? null : reader.GetString(10)
+            Error = reader.IsDBNull(11) ? null : reader.GetString(11)
         };
     }
 

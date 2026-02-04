@@ -38,6 +38,9 @@ public class BacktestService : IBacktestService
         // Validate request
         ValidateRequest(request);
 
+        // Parse market type
+        var market = MarketTypeExtensions.ParseMarketType(request.Market);
+
         // Create strategy
         var strategy = CreateStrategy(request.Strategy);
         strategy.Configure(request.Parameters);
@@ -53,7 +56,8 @@ public class BacktestService : IBacktestService
             EndTime = request.EndTime,
             Strategy = request.Strategy,
             Parameters = request.Parameters,
-            Status = BacktestStatus.Running
+            Status = BacktestStatus.Running,
+            Market = market.ToStringValue()
         };
 
         // Save initial backtest record if repository is available
@@ -86,6 +90,7 @@ public class BacktestService : IBacktestService
                 request.EndTime,
                 strategy,
                 config,
+                market,
                 cancellationToken);
 
             // Update backtest with results

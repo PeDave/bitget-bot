@@ -188,6 +188,7 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
                         workItem.Symbol, 
                         workItem.Interval, 
                         workItem.Candles, 
+                        MarketType.Spot,
                         cancellationToken);
                 }
             }
@@ -727,7 +728,7 @@ public class WebSocketSubscriptionService : BackgroundService, IWebSocketSubscri
                     // Persist to database if enabled
                     if (_chartingOptions.EnablePersistence && _candleRepository != null)
                     {
-                        await _candleRepository.UpsertCandlesAsync(symbol, interval, candleList, CancellationToken.None);
+                        await _candleRepository.UpsertCandlesAsync(symbol, interval, candleList, MarketType.Spot, CancellationToken.None);
                     }
                 }
             }

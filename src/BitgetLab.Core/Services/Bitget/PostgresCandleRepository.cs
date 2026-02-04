@@ -52,6 +52,7 @@ public class PostgresCandleRepository : ICandleRepository
         DateTime? startTime = null,
         DateTime? endTime = null,
         int limit = 500,
+        MarketType market = MarketType.Spot,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(_connectionString))
@@ -67,12 +68,13 @@ public class PostgresCandleRepository : ICandleRepository
             var sql = @"
                 SELECT symbol, interval, open_time, open, high, low, close, volume, quote_volume
                 FROM candles
-                WHERE symbol = @symbol AND interval = @interval";
+                WHERE symbol = @symbol AND interval = @interval AND market_type = @marketType";
 
             var parameters = new List<NpgsqlParameter>
             {
                 new("@symbol", symbol),
-                new("@interval", interval)
+                new("@interval", interval),
+                new("@marketType", market.ToStringValue())
             };
 
             if (startTime.HasValue)
@@ -114,7 +116,7 @@ public class PostgresCandleRepository : ICandleRepository
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to get candles from database for {Symbol} {Interval}", symbol, interval);
+            _logger.LogError(ex, "Failed to get candles from database for {Symbol} {Interval} {Market}", symbol, interval, market.ToStringValue());
             return Enumerable.Empty<CandleDto>();
         }
     }
@@ -123,15 +125,17 @@ public class PostgresCandleRepository : ICandleRepository
         string symbol,
         string interval,
         CandleDto candle,
+        MarketType market = MarketType.Spot,
         CancellationToken cancellationToken = default)
     {
-        await UpsertCandlesAsync(symbol, interval, new[] { candle }, cancellationToken);
+        await UpsertCandlesAsync(symbol, interval, new[] { candle }, market, cancellationToken);
     }
 
     public async Task UpsertCandlesAsync(
         string symbol,
         string interval,
         IEnumerable<CandleDto> candles,
+        MarketType market = MarketType.Spot,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(_connectionString))
@@ -166,6 +170,7 @@ public class PostgresCandleRepository : ICandleRepository
 
                 var totalUpserted = 0;
                 var updatedAt = DateTime.UtcNow;
+                var marketType = market.ToStringValue();
 
                 for (int chunkIdx = 0; chunkIdx < chunks.Count; chunkIdx++)
                 {
@@ -178,7 +183,7 @@ public class PostgresCandleRepository : ICandleRepository
                     {
                         var candle = chunk[i];
                         
-                        valuesClauses.Add($"(@symbol, @interval, @openTime{i}, @open{i}, @high{i}, @low{i}, @close{i}, @volume{i}, @quoteVolume{i}, @updatedAt)");
+                        valuesClauses.Add($"(@symbol, @interval, @openTime{i}, @open{i}, @high{i}, @low{i}, @close{i}, @volume{i}, @quoteVolume{i}, @updatedAt, @marketType)");
                         
                         parameters.Add(new NpgsqlParameter($"@openTime{i}", candle.OpenTime));
                         parameters.Add(new NpgsqlParameter($"@open{i}", candle.Open));
@@ -190,9 +195,9 @@ public class PostgresCandleRepository : ICandleRepository
                     }
 
                     var sql = $@"
-                        INSERT INTO candles (symbol, interval, open_time, open, high, low, close, volume, quote_volume, updated_at)
+                        INSERT INTO candles (symbol, interval, open_time, open, high, low, close, volume, quote_volume, updated_at, market_type)
                         VALUES {string.Join(", ", valuesClauses)}
-                        ON CONFLICT (symbol, interval, open_time)
+                        ON CONFLICT (symbol, interval, open_time, market_type)
                         DO UPDATE SET
                             open = EXCLUDED.open,
                             high = EXCLUDED.high,
@@ -206,18 +211,19 @@ public class PostgresCandleRepository : ICandleRepository
                     command.Parameters.AddWithValue("@symbol", symbol);
                     command.Parameters.AddWithValue("@interval", interval);
                     command.Parameters.AddWithValue("@updatedAt", updatedAt);
+                    command.Parameters.AddWithValue("@marketType", marketType);
                     command.Parameters.AddRange(parameters.ToArray());
 
                     await command.ExecuteNonQueryAsync(cancellationToken);
                     totalUpserted += chunk.Count;
                     
-                    _logger.LogTrace("Batch upserted {Count} candles for {Symbol} {Interval} (chunk {Current}/{Total})", 
-                        chunk.Count, symbol, interval, chunkIdx + 1, chunks.Count);
+                    _logger.LogTrace("Batch upserted {Count} candles for {Symbol} {Interval} {Market} (chunk {Current}/{Total})", 
+                        chunk.Count, symbol, interval, marketType, chunkIdx + 1, chunks.Count);
                 }
 
                 await transaction.CommitAsync(cancellationToken);
-                _logger.LogDebug("Successfully upserted {Count} candles for {Symbol} {Interval} in {Chunks} batch(es)", 
-                    totalUpserted, symbol, interval, chunks.Count);
+                _logger.LogDebug("Successfully upserted {Count} candles for {Symbol} {Interval} {Market} in {Chunks} batch(es)", 
+                    totalUpserted, symbol, interval, marketType, chunks.Count);
             }
             catch
             {
@@ -227,13 +233,14 @@ public class PostgresCandleRepository : ICandleRepository
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to upsert candles to database for {Symbol} {Interval}", symbol, interval);
+            _logger.LogError(ex, "Failed to upsert candles to database for {Symbol} {Interval} {Market}", symbol, interval, market.ToStringValue());
         }
     }
 
     public async Task<CandleStatsDto> GetStatsAsync(
         string symbol,
         string interval,
+        MarketType market = MarketType.Spot,
         CancellationToken cancellationToken = default)
     {
         var stats = new CandleStatsDto
@@ -260,11 +267,12 @@ public class PostgresCandleRepository : ICandleRepository
                     MAX(open_time) as max_open_time,
                     MAX(updated_at) as last_updated_at
                 FROM candles
-                WHERE symbol = @symbol AND interval = @interval";
+                WHERE symbol = @symbol AND interval = @interval AND market_type = @marketType";
 
             await using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue("@symbol", symbol);
             command.Parameters.AddWithValue("@interval", interval);
+            command.Parameters.AddWithValue("@marketType", market.ToStringValue());
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             
@@ -280,7 +288,7 @@ public class PostgresCandleRepository : ICandleRepository
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to get stats from database for {Symbol} {Interval}", symbol, interval);
+            _logger.LogError(ex, "Failed to get stats from database for {Symbol} {Interval} {Market}", symbol, interval, market.ToStringValue());
             stats.DbAvailable = false;
             return stats;
         }

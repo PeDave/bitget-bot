@@ -17,6 +17,7 @@ public interface ICandleService
     /// <param name="startTime">Optional start time filter</param>
     /// <param name="endTime">Optional end time filter</param>
     /// <param name="limit">Maximum number of candles per request (default 100, max 1000). When both startTime and endTime are provided, this acts as page size for pagination and the method returns all candles in the range.</param>
+    /// <param name="market">Market type (spot or futures), defaults to spot</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Collection of candles. When startTime and endTime are provided, returns all candles in the date range (potentially more than limit). Otherwise, returns up to limit candles.</returns>
     Task<IEnumerable<CandleDto>> GetCandlesAsync(
@@ -25,6 +26,7 @@ public interface ICandleService
         DateTime? startTime = null,
         DateTime? endTime = null,
         int limit = 100,
+        MarketType market = MarketType.Spot,
         CancellationToken cancellationToken = default);
 }
 
@@ -56,6 +58,7 @@ public class CandleService : ICandleService
         DateTime? startTime = null,
         DateTime? endTime = null,
         int limit = 100,
+        MarketType market = MarketType.Spot,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(symbol))
@@ -76,7 +79,7 @@ public class CandleService : ICandleService
         if (_chartingOptions.EnablePersistence && _candleRepository != null)
         {
             var dbCandles = await _candleRepository.GetCandlesAsync(
-                symbol, interval, startTime, endTime, limit, cancellationToken);
+                symbol, interval, startTime, endTime, limit, market, cancellationToken);
             
             var dbCandleList = dbCandles.ToList();
             
@@ -108,7 +111,7 @@ public class CandleService : ICandleService
             if (dbCandleList.Count > 0)
             {
                 // Fetch from REST API with pagination for full range
-                var restCandles = await FetchFromRestApiAsync(symbol, interval, startTime, endTime, perRequestLimit, cancellationToken);
+                var restCandles = await FetchFromRestApiAsync(symbol, interval, startTime, endTime, perRequestLimit, market, cancellationToken);
                 
                 // Merge DB and REST candles, dedupe by OpenTime
                 var mergedCandles = dbCandleList
@@ -137,7 +140,7 @@ public class CandleService : ICandleService
                     {
                         try
                         {
-                            await _candleRepository.UpsertCandlesAsync(symbol, interval, newCandles, CancellationToken.None);
+                            await _candleRepository.UpsertCandlesAsync(symbol, interval, newCandles, market, CancellationToken.None);
                         }
                         catch
                         {
@@ -151,7 +154,7 @@ public class CandleService : ICandleService
         }
 
         // Otherwise fetch from Bitget REST API with pagination for full range
-        var candles = await FetchFromRestApiAsync(symbol, interval, startTime, endTime, perRequestLimit, cancellationToken);
+        var candles = await FetchFromRestApiAsync(symbol, interval, startTime, endTime, perRequestLimit, market, cancellationToken);
         
         // Persist to database if enabled
         if (_chartingOptions.EnablePersistence && _candleRepository != null && candles.Count > 0)
@@ -162,7 +165,7 @@ public class CandleService : ICandleService
             {
                 try
                 {
-                    await _candleRepository.UpsertCandlesAsync(symbol, interval, candles, CancellationToken.None);
+                    await _candleRepository.UpsertCandlesAsync(symbol, interval, candles, market, CancellationToken.None);
                 }
                 catch
                 {
@@ -180,17 +183,38 @@ public class CandleService : ICandleService
         DateTime? startTime,
         DateTime? endTime,
         int limit,
+        MarketType market,
         CancellationToken cancellationToken)
     {
         // If both startTime and endTime are provided, fetch all candles in range with pagination
         if (startTime.HasValue && endTime.HasValue)
         {
-            return await FetchRangeWithPaginationAsync(symbol, interval, startTime.Value, endTime.Value, limit, cancellationToken);
+            return await FetchRangeWithPaginationAsync(symbol, interval, startTime.Value, endTime.Value, limit, market, cancellationToken);
         }
         
         // Otherwise, single request with limit
         using var client = _clientFactory.CreateRestClient();
         
+        // Route to appropriate API based on market type
+        if (market == MarketType.Futures)
+        {
+            return await FetchFromFuturesApiAsync(client, symbol, interval, startTime, endTime, limit, cancellationToken);
+        }
+        else
+        {
+            return await FetchFromSpotApiAsync(client, symbol, interval, startTime, endTime, limit, cancellationToken);
+        }
+    }
+
+    private async Task<List<CandleDto>> FetchFromSpotApiAsync(
+        global::Bitget.Net.Interfaces.Clients.IBitgetRestClient client,
+        string symbol,
+        string interval,
+        DateTime? startTime,
+        DateTime? endTime,
+        int limit,
+        CancellationToken cancellationToken)
+    {
         // Get klines from Bitget Spot API
         var result = await client.SpotApiV2.ExchangeData.GetKlinesAsync(
             symbol: symbol,
@@ -202,7 +226,43 @@ public class CandleService : ICandleService
         
         if (!result.Success)
         {
-            throw new BitgetApiException($"Failed to get candles for {symbol}: {result.Error?.Message ?? "Unknown error"}");
+            throw new BitgetApiException($"Failed to get spot candles for {symbol}: {result.Error?.Message ?? "Unknown error"}");
+        }
+
+        return result.Data.Select(k => new CandleDto
+        {
+            OpenTime = k.OpenTime,
+            Open = k.OpenPrice,
+            High = k.HighPrice,
+            Low = k.LowPrice,
+            Close = k.ClosePrice,
+            Volume = k.Volume,
+            QuoteVolume = k.QuoteVolume
+        }).ToList();
+    }
+
+    private async Task<List<CandleDto>> FetchFromFuturesApiAsync(
+        global::Bitget.Net.Interfaces.Clients.IBitgetRestClient client,
+        string symbol,
+        string interval,
+        DateTime? startTime,
+        DateTime? endTime,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        // Get klines from Bitget Futures API (USDT-margined)
+        var result = await client.FuturesApiV2.ExchangeData.GetKlinesAsync(
+            productType: global::Bitget.Net.Enums.BitgetProductTypeV2.UsdtFutures,
+            symbol: symbol,
+            interval: ParseFuturesInterval(interval),
+            startTime: startTime,
+            endTime: endTime,
+            limit: limit,
+            ct: cancellationToken);
+        
+        if (!result.Success)
+        {
+            throw new BitgetApiException($"Failed to get futures candles for {symbol}: {result.Error?.Message ?? "Unknown error"}");
         }
 
         return result.Data.Select(k => new CandleDto
@@ -223,6 +283,7 @@ public class CandleService : ICandleService
         DateTime startTime,
         DateTime endTime,
         int perRequestLimit,
+        MarketType market,
         CancellationToken cancellationToken)
     {
         var allCandles = new Dictionary<DateTime, CandleDto>(); // Use dictionary for deduplication
@@ -245,45 +306,31 @@ public class CandleService : ICandleService
             iteration++;
             cancellationToken.ThrowIfCancellationRequested();
             
-            // Fetch next page
-            var result = await client.SpotApiV2.ExchangeData.GetKlinesAsync(
-                symbol: symbol,
-                interval: ParseInterval(interval),
-                startTime: currentStartTime,
-                endTime: endTime,
-                limit: perRequestLimit,
-                ct: cancellationToken);
-            
-            if (!result.Success)
+            // Fetch next page based on market type
+            List<CandleDto> pageCandles;
+            if (market == MarketType.Futures)
             {
-                throw new BitgetApiException($"Failed to get candles for {symbol}: {result.Error?.Message ?? "Unknown error"}");
+                pageCandles = await FetchFromFuturesApiAsync(client, symbol, interval, currentStartTime, endTime, perRequestLimit, cancellationToken);
+            }
+            else
+            {
+                pageCandles = await FetchFromSpotApiAsync(client, symbol, interval, currentStartTime, endTime, perRequestLimit, cancellationToken);
             }
             
             // If no data returned, we've reached the end
-            if (result.Data == null || !result.Data.Any())
+            if (pageCandles.Count == 0)
             {
                 break;
             }
             
             // Add candles to dictionary (automatic deduplication by OpenTime)
-            foreach (var k in result.Data)
+            foreach (var candle in pageCandles)
             {
-                var candle = new CandleDto
-                {
-                    OpenTime = k.OpenTime,
-                    Open = k.OpenPrice,
-                    High = k.HighPrice,
-                    Low = k.LowPrice,
-                    Close = k.ClosePrice,
-                    Volume = k.Volume,
-                    QuoteVolume = k.QuoteVolume
-                };
-                
                 allCandles[candle.OpenTime] = candle;
             }
             
             // Move to next page: start from the last candle's time + interval
-            var lastCandleTime = result.Data.Max(k => k.OpenTime);
+            var lastCandleTime = pageCandles.Max(k => k.OpenTime);
             var nextStartTime = lastCandleTime.Add(intervalTimeSpan);
             
             // If we're not making progress, break to avoid infinite loop
@@ -295,7 +342,7 @@ public class CandleService : ICandleService
             currentStartTime = nextStartTime;
             
             // If we got fewer candles than requested, we've likely reached the end
-            if (result.Data.Count() < perRequestLimit)
+            if (pageCandles.Count < perRequestLimit)
             {
                 break;
             }
@@ -336,6 +383,27 @@ public class CandleService : ICandleService
             "3d" => global::Bitget.Net.Enums.V2.KlineInterval.ThreeDays,
             "1w" => global::Bitget.Net.Enums.V2.KlineInterval.OneWeek,
             "1mo" or "1month" => global::Bitget.Net.Enums.V2.KlineInterval.OneMonth,
+            _ => throw new ArgumentException($"Invalid interval: {interval}. Valid values: 1m, 5m, 15m, 30m, 1h, 4h, 6h, 12h, 1d, 3d, 1w, 1mo, 1month")
+        };
+    }
+
+    private global::Bitget.Net.Enums.BitgetFuturesKlineInterval ParseFuturesInterval(string interval)
+    {
+        // Map string intervals to Bitget.Net futures enum
+        return interval.ToLowerInvariant() switch
+        {
+            "1m" => global::Bitget.Net.Enums.BitgetFuturesKlineInterval.OneMinute,
+            "5m" => global::Bitget.Net.Enums.BitgetFuturesKlineInterval.FiveMinutes,
+            "15m" => global::Bitget.Net.Enums.BitgetFuturesKlineInterval.FifteenMinutes,
+            "30m" => global::Bitget.Net.Enums.BitgetFuturesKlineInterval.ThirtyMinutes,
+            "1h" => global::Bitget.Net.Enums.BitgetFuturesKlineInterval.OneHour,
+            "4h" => global::Bitget.Net.Enums.BitgetFuturesKlineInterval.FourHours,
+            "6h" => global::Bitget.Net.Enums.BitgetFuturesKlineInterval.SixHours,
+            "12h" => global::Bitget.Net.Enums.BitgetFuturesKlineInterval.TwelveHours,
+            "1d" => global::Bitget.Net.Enums.BitgetFuturesKlineInterval.OneDay,
+            "3d" => global::Bitget.Net.Enums.BitgetFuturesKlineInterval.ThreeDays,
+            "1w" => global::Bitget.Net.Enums.BitgetFuturesKlineInterval.OneWeek,
+            "1mo" or "1month" => global::Bitget.Net.Enums.BitgetFuturesKlineInterval.OneMonth,
             _ => throw new ArgumentException($"Invalid interval: {interval}. Valid values: 1m, 5m, 15m, 30m, 1h, 4h, 6h, 12h, 1d, 3d, 1w, 1mo, 1month")
         };
     }

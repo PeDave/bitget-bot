@@ -16,6 +16,7 @@ public class BacktestDto
     public string Strategy { get; set; } = string.Empty;
     public Dictionary<string, object> Parameters { get; set; } = new();
     public string Status { get; set; } = "pending";
+    public string Market { get; set; } = "spot";
     public BacktestSummary? Summary { get; set; }
     public string? Error { get; set; }
 }
@@ -77,6 +78,7 @@ public class RunBacktestRequest
     public decimal? FeeBps { get; set; }
     public decimal? SlippageBps { get; set; }
     public decimal? InitialBalance { get; set; }
+    public string? Market { get; set; }
 }
 
 /// <summary>
@@ -99,6 +101,7 @@ public class SweepBacktestRequest
     public int TopN { get; set; } = 10;
     public string SortBy { get; set; } = "netPnl";
     public int MaxConcurrency { get; set; } = 1;
+    public string? Market { get; set; }
 }
 
 /// <summary>

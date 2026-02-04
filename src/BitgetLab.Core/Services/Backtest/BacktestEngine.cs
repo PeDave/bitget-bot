@@ -15,6 +15,7 @@ public interface IBacktestEngine
         DateTime endTime,
         IStrategy strategy,
         BacktestConfig config,
+        MarketType market = MarketType.Spot,
         CancellationToken cancellationToken = default);
 }
 
@@ -56,11 +57,12 @@ public class BacktestEngine : IBacktestEngine
         DateTime endTime,
         IStrategy strategy,
         BacktestConfig config,
+        MarketType market = MarketType.Spot,
         CancellationToken cancellationToken = default)
     {
         // Load candles
         var candles = await _candleService.GetCandlesAsync(
-            symbol, interval, startTime, endTime, 1000, cancellationToken);
+            symbol, interval, startTime, endTime, 1000, market, cancellationToken);
         
         var candleList = candles.OrderBy(c => c.OpenTime).ToList();
 

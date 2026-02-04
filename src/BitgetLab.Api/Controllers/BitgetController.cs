@@ -906,6 +906,7 @@ public class BitgetController : ControllerBase
         [FromQuery] DateTime? startTime = null,
         [FromQuery] DateTime? endTime = null,
         [FromQuery] int limit = 100,
+        [FromQuery] string? market = null,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(symbol))
@@ -928,8 +929,11 @@ public class BitgetController : ControllerBase
 
         try
         {
+            // Parse market type (defaults to spot if not provided)
+            var marketType = MarketTypeExtensions.ParseMarketType(market);
+            
             var candles = await _candleService.GetCandlesAsync(
-                symbol, interval, startTime, endTime, limit, cancellationToken);
+                symbol, interval, startTime, endTime, limit, marketType, cancellationToken);
             var candleList = candles.ToList();
 
             return Ok(new
@@ -985,6 +989,7 @@ public class BitgetController : ControllerBase
     public async Task<IActionResult> GetCandleStats(
         [FromQuery] string symbol,
         [FromQuery] string interval,
+        [FromQuery] string? market = null,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(symbol))
@@ -1007,6 +1012,9 @@ public class BitgetController : ControllerBase
 
         try
         {
+            // Parse market type (defaults to spot if not provided)
+            var marketType = MarketTypeExtensions.ParseMarketType(market);
+            
             if (_candleRepository == null)
             {
                 return Ok(new
@@ -1025,7 +1033,7 @@ public class BitgetController : ControllerBase
                 });
             }
 
-            var stats = await _candleRepository.GetStatsAsync(symbol, interval, cancellationToken);
+            var stats = await _candleRepository.GetStatsAsync(symbol, interval, marketType, cancellationToken);
             
             return Ok(new
             {
@@ -1040,6 +1048,15 @@ public class BitgetController : ControllerBase
                     lastUpdatedAt = stats.LastUpdatedAt
                 },
                 count = stats.Count
+            });
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Invalid arguments for getting candle stats");
+            return BadRequest(new
+            {
+                success = false,
+                error = ex.Message
             });
         }
         catch (Exception ex)
@@ -1873,7 +1890,8 @@ public class BitgetController : ControllerBase
                         Parameters = parameters,
                         FeeBps = request.FeeBps,
                         SlippageBps = request.SlippageBps,
-                        InitialBalance = request.InitialBalance
+                        InitialBalance = request.InitialBalance,
+                        Market = request.Market
                     };
 
                     var backtest = await _backtestService.RunBacktestAsync(backtestRequest, cancellationToken);
