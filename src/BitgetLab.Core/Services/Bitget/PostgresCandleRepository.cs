@@ -361,18 +361,23 @@ public class PostgresCandleRepository : ICandleRepository
             await using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync(cancellationToken);
 
-            // Use a subquery to identify rows beyond maxRows limit
+            // Use CTE with window function for better performance
             var sql = @"
-                DELETE FROM candles
-                WHERE (symbol, interval, market_type, open_time) IN (
-                    SELECT symbol, interval, market_type, open_time
+                WITH ranked_candles AS (
+                    SELECT open_time,
+                           ROW_NUMBER() OVER (ORDER BY open_time DESC) as rn
                     FROM candles
                     WHERE symbol = @symbol 
                       AND interval = @interval 
                       AND market_type = @marketType
-                    ORDER BY open_time DESC
-                    OFFSET @maxRows
-                )";
+                )
+                DELETE FROM candles
+                WHERE symbol = @symbol 
+                  AND interval = @interval 
+                  AND market_type = @marketType
+                  AND open_time IN (
+                      SELECT open_time FROM ranked_candles WHERE rn > @maxRows
+                  )";
 
             await using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue("@symbol", symbol);

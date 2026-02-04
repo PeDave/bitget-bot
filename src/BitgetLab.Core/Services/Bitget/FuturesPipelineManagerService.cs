@@ -83,6 +83,7 @@ public class FuturesPipelineManagerService : BackgroundService, IPipelineManager
 
         // Periodic REST sync loop
         var syncTimer = new PeriodicTimer(TimeSpan.FromMinutes(_options.SyncEveryMinutes));
+        var syncTasks = new List<Task>();
 
         try
         {
@@ -90,16 +91,19 @@ public class FuturesPipelineManagerService : BackgroundService, IPipelineManager
             {
                 await syncTimer.WaitForNextTickAsync(stoppingToken);
 
+                // Remove completed tasks
+                syncTasks.RemoveAll(t => t.IsCompleted);
+
                 // Run REST sync for all active pipelines
                 foreach (var pipeline in _pipelines.Values)
                 {
-                    if (!stoppingToken.IsCancellationRequested)
+                    if (!stoppingToken.IsCancellationRequested && !pipeline.CancellationTokenSource.Token.IsCancellationRequested)
                     {
-                        _ = Task.Run(async () =>
+                        var syncTask = Task.Run(async () =>
                         {
                             try
                             {
-                                await PerformRestSyncAsync(pipeline, CancellationToken.None);
+                                await PerformRestSyncAsync(pipeline, pipeline.CancellationTokenSource.Token);
                             }
                             catch (Exception ex)
                             {
@@ -107,9 +111,17 @@ public class FuturesPipelineManagerService : BackgroundService, IPipelineManager
                                     "Error in REST sync for {Symbol} {Market}",
                                     pipeline.Symbol, pipeline.Market.ToStringValue());
                             }
-                        }, CancellationToken.None);
+                        }, stoppingToken);
+                        
+                        syncTasks.Add(syncTask);
                     }
                 }
+            }
+
+            // Wait for any remaining sync tasks to complete with timeout
+            if (syncTasks.Any(t => !t.IsCompleted))
+            {
+                await Task.WhenAny(Task.WhenAll(syncTasks), Task.Delay(PIPELINE_SHUTDOWN_TIMEOUT_MS, CancellationToken.None));
             }
         }
         catch (OperationCanceledException)
@@ -427,17 +439,9 @@ public class FuturesPipelineManagerService : BackgroundService, IPipelineManager
     {
         _logger.LogInformation("Stopping all pipelines...");
 
-        // Stop all pipelines
-        var stopTasks = _pipelines.Keys
-            .Select(key =>
-            {
-                var parts = key.Split('_');
-                var symbol = parts[0];
-                var marketType = parts.Length > 1 && parts[1] == "spot" 
-                    ? MarketType.Spot 
-                    : MarketType.Futures;
-                return StopPipelineAsync(symbol, marketType, cancellationToken);
-            })
+        // Stop all pipelines using stored symbol and market type
+        var stopTasks = _pipelines.Values
+            .Select(pipeline => StopPipelineAsync(pipeline.Symbol, pipeline.Market, cancellationToken))
             .ToList();
 
         await Task.WhenAll(stopTasks);
