@@ -34,6 +34,12 @@ public class CandleService : ICandleService
     private readonly ICandleRepository? _candleRepository;
     private readonly ChartingOptions _chartingOptions;
 
+    // Pagination safety constants
+    private const int MAX_PAGINATION_ITERATIONS = 200; // Maximum iterations to prevent infinite loops
+    private const int MIN_PAGINATION_ITERATIONS = 10;  // Minimum iterations regardless of expected candles
+    private const int SAFETY_MULTIPLIER = 2;           // Multiply expected iterations by this for buffer
+    private const int DEFAULT_EXPECTED_CANDLES = 1000; // Default when interval calculation fails
+
     public CandleService(
         IBitgetClientFactory clientFactory,
         IOptions<ChartingOptions> chartingOptions,
@@ -227,8 +233,9 @@ public class CandleService : ICandleService
         var expectedCandles = CalculateExpectedCandles(startTime, endTime, intervalTimeSpan);
         
         // Safety limit: max iterations to prevent infinite loops
-        // Allow up to 10x the expected candles, capped at 200 iterations
-        var maxIterations = Math.Min(200, Math.Max(10, (expectedCandles / perRequestLimit + 1) * 2));
+        // Allow up to 10x the expected candles with a safety buffer, capped at max iterations
+        var maxIterations = Math.Min(MAX_PAGINATION_ITERATIONS, 
+            Math.Max(MIN_PAGINATION_ITERATIONS, (expectedCandles / perRequestLimit + 1) * SAFETY_MULTIPLIER));
         var iteration = 0;
         
         using var client = _clientFactory.CreateRestClient();
@@ -302,7 +309,7 @@ public class CandleService : ICandleService
     {
         if (intervalTimeSpan.TotalSeconds <= 0)
         {
-            return 1000; // Default safe value
+            return DEFAULT_EXPECTED_CANDLES;
         }
         
         var timeRange = endTime - startTime;
