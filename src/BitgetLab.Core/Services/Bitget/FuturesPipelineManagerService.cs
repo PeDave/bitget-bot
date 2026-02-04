@@ -54,6 +54,9 @@ public class FuturesPipelineManagerService : BackgroundService, IPipelineManager
     private readonly FuturesPipelineOptions _options;
     private readonly ILogger<FuturesPipelineManagerService> _logger;
 
+    // Configuration constants
+    private const int PIPELINE_SHUTDOWN_TIMEOUT_MS = 5000;
+
     public FuturesPipelineManagerService(
         ICandleService candleService,
         IWebSocketSubscriptionService wsService,
@@ -222,7 +225,7 @@ public class FuturesPipelineManagerService : BackgroundService, IPipelineManager
             // Wait for background task to complete (with timeout)
             if (pipeline.BackgroundTask != null)
             {
-                await Task.WhenAny(pipeline.BackgroundTask, Task.Delay(5000, cancellationToken));
+                await Task.WhenAny(pipeline.BackgroundTask, Task.Delay(PIPELINE_SHUTDOWN_TIMEOUT_MS, cancellationToken));
             }
 
             pipeline.Status.IsRunning = false;
@@ -426,7 +429,15 @@ public class FuturesPipelineManagerService : BackgroundService, IPipelineManager
 
         // Stop all pipelines
         var stopTasks = _pipelines.Keys
-            .Select(key => StopPipelineAsync(key.Split('_')[0], MarketType.Futures, cancellationToken))
+            .Select(key =>
+            {
+                var parts = key.Split('_');
+                var symbol = parts[0];
+                var marketType = parts.Length > 1 && parts[1] == "spot" 
+                    ? MarketType.Spot 
+                    : MarketType.Futures;
+                return StopPipelineAsync(symbol, marketType, cancellationToken);
+            })
             .ToList();
 
         await Task.WhenAll(stopTasks);
