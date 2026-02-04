@@ -29,6 +29,10 @@ psql -U postgres -d bitgetlab -f docs/sql/001_create_candles.sql
 
 # Run backtest tables migration
 psql -U postgres -d bitgetlab -f ops/db/002_create_backtest_tables.sql
+
+# Run futures market support migrations (NEW)
+psql -U postgres -d bitgetlab -f docs/sql/002_add_market_type_to_candles.sql
+psql -U postgres -d bitgetlab -f docs/sql/003_add_market_to_backtests.sql
 ```
 
 ### Verify Tables
@@ -37,6 +41,8 @@ psql -U postgres -d bitgetlab -c "\dt"
 ```
 
 You should see: `backtests`, `backtest_trades`, and `candles` tables.
+
+> **Note**: For futures candle support documentation, see [FUTURES_CANDLES.md](docs/FUTURES_CANDLES.md)
 
 ## Step 2: Configure Connection String (30 seconds)
 
