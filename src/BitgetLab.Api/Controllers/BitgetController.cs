@@ -25,6 +25,7 @@ public class BitgetController : ControllerBase
     private readonly IWebSocketSubscriptionService _subscriptionService;
     private readonly ICandleRepository? _candleRepository;
     private readonly IBacktestService? _backtestService;
+    private readonly IPipelineManagerService? _pipelineManager;
     private readonly ILogger<BitgetController> _logger;
 
     public BitgetController(
@@ -44,7 +45,8 @@ public class BitgetController : ControllerBase
         IWebSocketSubscriptionService subscriptionService,
         ILogger<BitgetController> logger,
         ICandleRepository? candleRepository = null,
-        IBacktestService? backtestService = null)
+        IBacktestService? backtestService = null,
+        IPipelineManagerService? pipelineManager = null)
     {
         _marketDataService = marketDataService;
         _tradingService = tradingService;
@@ -62,6 +64,7 @@ public class BitgetController : ControllerBase
         _subscriptionService = subscriptionService;
         _candleRepository = candleRepository;
         _backtestService = backtestService;
+        _pipelineManager = pipelineManager;
         _logger = logger;
     }
 
@@ -2011,5 +2014,264 @@ public class BitgetController : ControllerBase
             }
         }
         return result;
+    }
+
+    // ========================================
+    // Pipeline Management Endpoints
+    // ========================================
+
+    /// <summary>
+    /// Start a futures data pipeline for a symbol
+    /// </summary>
+    [HttpPost("pipeline/start")]
+    public async Task<IActionResult> StartPipeline(
+        [FromQuery] string symbol,
+        [FromQuery] string market = "futures",
+        CancellationToken cancellationToken = default)
+    {
+        if (_pipelineManager == null)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Pipeline manager not available"
+            });
+        }
+
+        if (string.IsNullOrWhiteSpace(symbol))
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Symbol is required"
+            });
+        }
+
+        try
+        {
+            var marketType = market.ToLowerInvariant() == "futures" 
+                ? MarketType.Futures 
+                : MarketType.Spot;
+
+            var started = await _pipelineManager.StartPipelineAsync(symbol, marketType, cancellationToken);
+
+            if (started)
+            {
+                _logger.LogInformation("Pipeline started for {Symbol} {Market}", symbol, market);
+                return Ok(new
+                {
+                    success = true,
+                    message = $"Pipeline started for {symbol} ({market})"
+                });
+            }
+            else
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    error = "Failed to start pipeline (may already be running)"
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error starting pipeline for {Symbol} {Market}", symbol, market);
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
+    }
+
+    /// <summary>
+    /// Stop a futures data pipeline for a symbol
+    /// </summary>
+    [HttpPost("pipeline/stop")]
+    public async Task<IActionResult> StopPipeline(
+        [FromQuery] string symbol,
+        [FromQuery] string market = "futures",
+        CancellationToken cancellationToken = default)
+    {
+        if (_pipelineManager == null)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Pipeline manager not available"
+            });
+        }
+
+        if (string.IsNullOrWhiteSpace(symbol))
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Symbol is required"
+            });
+        }
+
+        try
+        {
+            var marketType = market.ToLowerInvariant() == "futures" 
+                ? MarketType.Futures 
+                : MarketType.Spot;
+
+            var stopped = await _pipelineManager.StopPipelineAsync(symbol, marketType, cancellationToken);
+
+            if (stopped)
+            {
+                _logger.LogInformation("Pipeline stopped for {Symbol} {Market}", symbol, market);
+                return Ok(new
+                {
+                    success = true,
+                    message = $"Pipeline stopped for {symbol} ({market})"
+                });
+            }
+            else
+            {
+                return NotFound(new
+                {
+                    success = false,
+                    error = "Pipeline not found"
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error stopping pipeline for {Symbol} {Market}", symbol, market);
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
+    }
+
+    /// <summary>
+    /// Get status of a futures data pipeline for a symbol
+    /// </summary>
+    [HttpGet("pipeline/status")]
+    public IActionResult GetPipelineStatus(
+        [FromQuery] string symbol,
+        [FromQuery] string market = "futures")
+    {
+        if (_pipelineManager == null)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Pipeline manager not available"
+            });
+        }
+
+        if (string.IsNullOrWhiteSpace(symbol))
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Symbol is required"
+            });
+        }
+
+        try
+        {
+            var marketType = market.ToLowerInvariant() == "futures" 
+                ? MarketType.Futures 
+                : MarketType.Spot;
+
+            var status = _pipelineManager.GetPipelineStatus(symbol, marketType);
+
+            if (status == null)
+            {
+                return NotFound(new
+                {
+                    success = false,
+                    error = "Pipeline not found",
+                    running = false
+                });
+            }
+
+            return Ok(new
+            {
+                success = true,
+                status = new
+                {
+                    symbol = status.Symbol,
+                    market = status.Market.ToStringValue(),
+                    isRunning = status.IsRunning,
+                    startedAt = status.StartedAt,
+                    lastBackfillTimes = status.LastBackfillTimes,
+                    lastWsUpdate = status.LastWsUpdate,
+                    lastRestSync = status.LastRestSync,
+                    activeWsIntervals = status.ActiveWsIntervals,
+                    activeRestIntervals = status.ActiveRestIntervals,
+                    errors = status.Errors
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting pipeline status for {Symbol} {Market}", symbol, market);
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
+    }
+
+    /// <summary>
+    /// Get all active pipelines
+    /// </summary>
+    [HttpGet("pipeline/list")]
+    public IActionResult ListPipelines()
+    {
+        if (_pipelineManager == null)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = "Pipeline manager not available"
+            });
+        }
+
+        try
+        {
+            var pipelines = _pipelineManager.GetAllPipelines()
+                .Select(status => new
+                {
+                    symbol = status.Symbol,
+                    market = status.Market.ToStringValue(),
+                    isRunning = status.IsRunning,
+                    startedAt = status.StartedAt,
+                    lastWsUpdate = status.LastWsUpdate,
+                    lastRestSync = status.LastRestSync,
+                    activeWsIntervals = status.ActiveWsIntervals,
+                    activeRestIntervals = status.ActiveRestIntervals,
+                    errorCount = status.Errors.Count
+                })
+                .ToList();
+
+            return Ok(new
+            {
+                success = true,
+                count = pipelines.Count,
+                pipelines
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error listing pipelines");
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
     }
 }

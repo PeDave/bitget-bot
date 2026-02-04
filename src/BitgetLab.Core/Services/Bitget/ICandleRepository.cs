@@ -52,4 +52,33 @@ public interface ICandleRepository
         string interval,
         MarketType market = MarketType.Spot,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Delete candles older than the specified cutoff time
+    /// </summary>
+    Task<int> DeleteCandlesOlderThanAsync(
+        string symbol,
+        string interval,
+        DateTime cutoffTime,
+        MarketType market = MarketType.Spot,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Delete candles beyond the max rows limit, keeping only the newest rows
+    /// </summary>
+    Task<int> DeleteCandlesBeyondMaxRowsAsync(
+        string symbol,
+        string interval,
+        int maxRows,
+        MarketType market = MarketType.Spot,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Get count of candles for a symbol/interval
+    /// </summary>
+    Task<int> GetCandleCountAsync(
+        string symbol,
+        string interval,
+        MarketType market = MarketType.Spot,
+        CancellationToken cancellationToken = default);
 }

@@ -21,6 +21,10 @@ builder.Services.Configure<BitgetFuturesOptions>(
 builder.Services.Configure<ChartingOptions>(
     builder.Configuration.GetSection(ChartingOptions.SectionName));
 
+// Configure Futures Pipeline options
+builder.Services.Configure<FuturesPipelineOptions>(
+    builder.Configuration.GetSection(FuturesPipelineOptions.SectionName));
+
 // Register Bitget services
 builder.Services.AddSingleton<IBitgetClientFactory, BitgetClientFactory>();
 builder.Services.AddSingleton<IBitgetSocketClientFactory, BitgetSocketClientFactory>();
@@ -52,6 +56,14 @@ builder.Services.AddSingleton<IBacktestService, BacktestService>();
 builder.Services.AddSingleton<WebSocketSubscriptionService>();
 builder.Services.AddSingleton<IWebSocketSubscriptionService>(sp => sp.GetRequiredService<WebSocketSubscriptionService>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<WebSocketSubscriptionService>());
+
+// Register retention service
+builder.Services.AddSingleton<ICandleRetentionService, CandleRetentionService>();
+
+// Register pipeline manager as singleton and hosted service
+builder.Services.AddSingleton<FuturesPipelineManagerService>();
+builder.Services.AddSingleton<IPipelineManagerService>(sp => sp.GetRequiredService<FuturesPipelineManagerService>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<FuturesPipelineManagerService>());
 
 // Register system services
 builder.Services.AddSingleton<ISystemMetricsService, SystemMetricsService>();
