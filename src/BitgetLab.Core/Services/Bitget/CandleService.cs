@@ -331,25 +331,36 @@ public class CandleService : ICandleService
                 continue;
             }
             
-            // Bitget format: [timestamp, open, high, low, close, volume, quoteVolume]
-            var timestampMs = candleArray[0].GetInt64();
-            var open = decimal.Parse(candleArray[1].GetString() ?? "0", CultureInfo.InvariantCulture);
-            var high = decimal.Parse(candleArray[2].GetString() ?? "0", CultureInfo.InvariantCulture);
-            var low = decimal.Parse(candleArray[3].GetString() ?? "0", CultureInfo.InvariantCulture);
-            var close = decimal.Parse(candleArray[4].GetString() ?? "0", CultureInfo.InvariantCulture);
-            var volume = decimal.Parse(candleArray[5].GetString() ?? "0", CultureInfo.InvariantCulture);
-            var quoteVolume = decimal.Parse(candleArray[6].GetString() ?? "0", CultureInfo.InvariantCulture);
-            
-            candles.Add(new CandleDto
+            try
             {
-                OpenTime = DateTimeOffset.FromUnixTimeMilliseconds(timestampMs).UtcDateTime,
-                Open = open,
-                High = high,
-                Low = low,
-                Close = close,
-                Volume = volume,
-                QuoteVolume = quoteVolume
-            });
+                // Bitget format: [timestamp, open, high, low, close, volume, quoteVolume]
+                var timestampMs = ReadInt64(candleArray[0]);
+                var open = ReadDecimal(candleArray[1]);
+                var high = ReadDecimal(candleArray[2]);
+                var low = ReadDecimal(candleArray[3]);
+                var close = ReadDecimal(candleArray[4]);
+                var volume = ReadDecimal(candleArray[5]);
+                var quoteVolume = ReadDecimal(candleArray[6]);
+                
+                candles.Add(new CandleDto
+                {
+                    OpenTime = DateTimeOffset.FromUnixTimeMilliseconds(timestampMs).UtcDateTime,
+                    Open = open,
+                    High = high,
+                    Low = low,
+                    Close = close,
+                    Volume = volume,
+                    QuoteVolume = quoteVolume
+                });
+            }
+            catch (Exception ex)
+            {
+                // Log raw values for diagnostics
+                var rawValues = string.Join(", ", Enumerable.Range(0, candleArray.GetArrayLength())
+                    .Select(i => candleArray[i].ToString()));
+                throw new InvalidOperationException(
+                    $"Failed to parse candle data. Raw values: [{rawValues}]", ex);
+            }
         }
         
         return candles;
@@ -374,6 +385,32 @@ public class CandleService : ICandleService
             "1w" => "1W",  // Case-sensitive: uppercase W
             "1mo" or "1month" => "1M", // Case-sensitive: uppercase M
             _ => throw new ArgumentException($"Invalid interval: {interval}. Supported values (case-insensitive): 1m, 5m, 15m, 30m, 1h, 4h, 6h, 12h, 1d, 3d, 1w, 1mo, 1month")
+        };
+    }
+
+    /// <summary>
+    /// Reads a long integer from a JsonElement, supporting both Number and String value kinds.
+    /// </summary>
+    private static long ReadInt64(JsonElement element)
+    {
+        return element.ValueKind switch
+        {
+            JsonValueKind.Number => element.GetInt64(),
+            JsonValueKind.String => long.Parse(element.GetString() ?? "0", CultureInfo.InvariantCulture),
+            _ => throw new InvalidOperationException($"Cannot parse Int64 from JSON type {element.ValueKind}")
+        };
+    }
+
+    /// <summary>
+    /// Reads a decimal from a JsonElement, supporting both Number and String value kinds.
+    /// </summary>
+    private static decimal ReadDecimal(JsonElement element)
+    {
+        return element.ValueKind switch
+        {
+            JsonValueKind.Number => element.GetDecimal(),
+            JsonValueKind.String => decimal.Parse(element.GetString() ?? "0", CultureInfo.InvariantCulture),
+            _ => throw new InvalidOperationException($"Cannot parse decimal from JSON type {element.ValueKind}")
         };
     }
 
