@@ -356,7 +356,8 @@ public class CandleService : ICandleService
             catch (Exception ex)
             {
                 // Log raw values for diagnostics
-                var rawValues = string.Join(", ", Enumerable.Range(0, candleArray.GetArrayLength())
+                var arrayLength = candleArray.GetArrayLength();
+                var rawValues = string.Join(", ", Enumerable.Range(0, arrayLength)
                     .Select(i => candleArray[i].ToString()));
                 throw new InvalidOperationException(
                     $"Failed to parse candle data. Raw values: [{rawValues}]", ex);
