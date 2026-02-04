@@ -31,6 +31,13 @@ curl -s -w "\nHTTP Status: %{http_code}\n" \
   | head -20
 echo ""
 
+# Test 3.5: Futures candles with date range (the fix for this issue)
+echo "Test 3.5: Fetching futures candles with date range (startTime + endTime)..."
+curl -s -w "\nHTTP Status: %{http_code}\n" \
+  "$BASE_URL/api/bitget/market/candles?symbol=BTCUSDT&interval=1h&market=futures&startTime=2025-11-01T00:00:00Z&endTime=2026-02-01T00:00:00Z&limit=1000" \
+  | head -20
+echo ""
+
 # Test 4: Invalid market type
 echo "Test 4: Testing invalid market type..."
 curl -s -w "\nHTTP Status: %{http_code}\n" \

@@ -37,7 +37,8 @@ This implementation adds support for fetching and backtesting on futures market 
 - **CandleService.cs** - Routing and API calls
   - Routes to `FetchFromSpotApiAsync()` or `FetchFromFuturesApiAsync()`
   - Uses `client.SpotApiV2.ExchangeData.GetKlinesAsync()` for spot
-  - Uses `client.FuturesApiV2.ExchangeData.GetKlinesAsync()` for futures
+  - Uses `client.FuturesApiV2.ExchangeData.GetHistoricalKlinesAsync()` for futures
+  - **Note**: Futures uses historical endpoint to support startTime/endTime ranges (GetKlinesAsync fails with parameter verification errors)
   - Added `ParseFuturesInterval()` for futures-specific interval enum
   - Pagination works for both markets
 

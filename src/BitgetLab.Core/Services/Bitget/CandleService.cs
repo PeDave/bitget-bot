@@ -250,8 +250,10 @@ public class CandleService : ICandleService
         int limit,
         CancellationToken cancellationToken)
     {
-        // Get klines from Bitget Futures API (USDT-margined)
-        var result = await client.FuturesApiV2.ExchangeData.GetKlinesAsync(
+        // Get historical klines from Bitget Futures API (USDT-margined)
+        // Using GetHistoricalKlinesAsync instead of GetKlinesAsync because GetKlinesAsync
+        // fails with "Parameter verification failed startTime || endTime" when dates are provided
+        var result = await client.FuturesApiV2.ExchangeData.GetHistoricalKlinesAsync(
             productType: global::Bitget.Net.Enums.BitgetProductTypeV2.UsdtFutures,
             symbol: symbol,
             interval: ParseFuturesInterval(interval),
