@@ -71,14 +71,17 @@ Keep this terminal open.
 
 ## Step 4: Backfill Candle Data (2 minutes)
 
-Open a new terminal and use the API to fetch some historical data:
+Open a new terminal and use the API to fetch some historical data. The API now supports automatic pagination for date ranges, so you can request large historical datasets:
 
 ```bash
-# Backfill 1 week of hourly BTCUSDT candles
+# Backfill 1 week of hourly BTCUSDT candles (168 candles)
 curl "http://localhost:3001/api/bitget/market/candles?symbol=BTCUSDT&interval=1h&limit=168"
+
+# Or fetch a multi-month range (pagination happens automatically)
+curl "http://localhost:3001/api/bitget/market/candles?symbol=BTCUSDT&interval=1h&startTime=2024-11-01T00:00:00Z&endTime=2025-02-01T00:00:00Z"
 ```
 
-Or use the charting pipeline to backfill larger datasets (see `docs/charting-pipeline.md`).
+The endpoint will automatically paginate through all available data when both `startTime` and `endTime` are provided.
 
 ## Step 5: Run Your First Backtest (30 seconds)
 
