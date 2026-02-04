@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
 using BitgetLab.Core.Services.Bitget;
 using BitgetLab.Core.Services.Backtest;
@@ -2025,7 +2026,7 @@ public class BitgetController : ControllerBase
     /// </summary>
     [HttpPost("pipeline/start")]
     public async Task<IActionResult> StartPipeline(
-        [FromQuery] string symbol,
+        [FromQuery, Required] string symbol,
         [FromQuery] string market = "futures",
         CancellationToken cancellationToken = default)
     {
@@ -2060,7 +2061,7 @@ public class BitgetController : ControllerBase
     /// </summary>
     [HttpPost("pipeline/stop")]
     public async Task<IActionResult> StopPipeline(
-        [FromQuery] string symbol,
+        [FromQuery, Required] string symbol,
         [FromQuery] string market = "futures")
     {
         if (string.IsNullOrWhiteSpace(symbol))
@@ -2090,7 +2091,7 @@ public class BitgetController : ControllerBase
     /// </summary>
     [HttpGet("pipeline/status")]
     public IActionResult GetPipelineStatus(
-        [FromQuery] string symbol,
+        [FromQuery, Required] string symbol,
         [FromQuery] string market = "futures")
     {
         if (string.IsNullOrWhiteSpace(symbol))
