@@ -25,6 +25,7 @@ public class BitgetController : ControllerBase
     private readonly IWebSocketSubscriptionService _subscriptionService;
     private readonly ICandleRepository? _candleRepository;
     private readonly IBacktestService? _backtestService;
+    private readonly IFuturesSymbolPipelineManager? _pipelineManager;
     private readonly ILogger<BitgetController> _logger;
 
     public BitgetController(
@@ -44,7 +45,8 @@ public class BitgetController : ControllerBase
         IWebSocketSubscriptionService subscriptionService,
         ILogger<BitgetController> logger,
         ICandleRepository? candleRepository = null,
-        IBacktestService? backtestService = null)
+        IBacktestService? backtestService = null,
+        IFuturesSymbolPipelineManager? pipelineManager = null)
     {
         _marketDataService = marketDataService;
         _tradingService = tradingService;
@@ -62,6 +64,7 @@ public class BitgetController : ControllerBase
         _subscriptionService = subscriptionService;
         _candleRepository = candleRepository;
         _backtestService = backtestService;
+        _pipelineManager = pipelineManager;
         _logger = logger;
     }
 
@@ -2011,5 +2014,104 @@ public class BitgetController : ControllerBase
             }
         }
         return result;
+    }
+
+    // ===============================
+    // Pipeline Management Endpoints
+    // ===============================
+
+    /// <summary>
+    /// Start a data pipeline for a symbol
+    /// </summary>
+    [HttpPost("pipeline/start")]
+    public async Task<IActionResult> StartPipeline(
+        [FromQuery] string symbol,
+        [FromQuery] string market = "futures",
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(symbol))
+        {
+            return BadRequest(new { error = "Symbol is required" });
+        }
+
+        if (_pipelineManager == null)
+        {
+            return BadRequest(new { error = "Pipeline manager not available" });
+        }
+
+        try
+        {
+            var status = await _pipelineManager.StartAsync(symbol, market, cancellationToken);
+            return Ok(status);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { error = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to start pipeline for {Symbol} {Market}", symbol, market);
+            return StatusCode(500, new { error = "Failed to start pipeline", details = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Stop a data pipeline for a symbol
+    /// </summary>
+    [HttpPost("pipeline/stop")]
+    public async Task<IActionResult> StopPipeline(
+        [FromQuery] string symbol,
+        [FromQuery] string market = "futures")
+    {
+        if (string.IsNullOrWhiteSpace(symbol))
+        {
+            return BadRequest(new { error = "Symbol is required" });
+        }
+
+        if (_pipelineManager == null)
+        {
+            return BadRequest(new { error = "Pipeline manager not available" });
+        }
+
+        try
+        {
+            var status = await _pipelineManager.StopAsync(symbol, market);
+            return Ok(status);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to stop pipeline for {Symbol} {Market}", symbol, market);
+            return StatusCode(500, new { error = "Failed to stop pipeline", details = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Get status of a data pipeline for a symbol
+    /// </summary>
+    [HttpGet("pipeline/status")]
+    public IActionResult GetPipelineStatus(
+        [FromQuery] string symbol,
+        [FromQuery] string market = "futures")
+    {
+        if (string.IsNullOrWhiteSpace(symbol))
+        {
+            return BadRequest(new { error = "Symbol is required" });
+        }
+
+        if (_pipelineManager == null)
+        {
+            return BadRequest(new { error = "Pipeline manager not available" });
+        }
+
+        try
+        {
+            var status = _pipelineManager.GetStatus(symbol, market);
+            return Ok(status);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get pipeline status for {Symbol} {Market}", symbol, market);
+            return StatusCode(500, new { error = "Failed to get pipeline status", details = ex.Message });
+        }
     }
 }

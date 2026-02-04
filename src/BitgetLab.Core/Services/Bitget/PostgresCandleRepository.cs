@@ -293,4 +293,84 @@ public class PostgresCandleRepository : ICandleRepository
             return stats;
         }
     }
+
+    public async Task TrimRetentionAsync(
+        string symbol,
+        string interval,
+        MarketType market,
+        DateTime cutoffTime,
+        int maxRows,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(_connectionString))
+        {
+            return;
+        }
+
+        try
+        {
+            await using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            var marketType = market.ToStringValue();
+
+            // First, delete rows older than cutoffTime
+            var timeBasedSql = @"
+                DELETE FROM candles
+                WHERE symbol = @symbol 
+                    AND interval = @interval 
+                    AND market_type = @marketType 
+                    AND open_time < @cutoffTime";
+
+            await using var timeCommand = new NpgsqlCommand(timeBasedSql, connection);
+            timeCommand.Parameters.AddWithValue("@symbol", symbol);
+            timeCommand.Parameters.AddWithValue("@interval", interval);
+            timeCommand.Parameters.AddWithValue("@marketType", marketType);
+            timeCommand.Parameters.AddWithValue("@cutoffTime", cutoffTime);
+
+            var timeDeleted = await timeCommand.ExecuteNonQueryAsync(cancellationToken);
+            
+            if (timeDeleted > 0)
+            {
+                _logger.LogInformation("Deleted {Count} candles older than {CutoffTime} for {Symbol} {Interval} {Market}",
+                    timeDeleted, cutoffTime, symbol, interval, marketType);
+            }
+
+            // Second, if more than maxRows remain, delete oldest beyond newest maxRows
+            var rowCapSql = @"
+                WITH ranked AS (
+                    SELECT open_time,
+                           ROW_NUMBER() OVER (ORDER BY open_time DESC) as rn
+                    FROM candles
+                    WHERE symbol = @symbol 
+                        AND interval = @interval 
+                        AND market_type = @marketType
+                )
+                DELETE FROM candles
+                WHERE symbol = @symbol 
+                    AND interval = @interval 
+                    AND market_type = @marketType
+                    AND open_time IN (
+                        SELECT open_time FROM ranked WHERE rn > @maxRows
+                    )";
+
+            await using var rowCapCommand = new NpgsqlCommand(rowCapSql, connection);
+            rowCapCommand.Parameters.AddWithValue("@symbol", symbol);
+            rowCapCommand.Parameters.AddWithValue("@interval", interval);
+            rowCapCommand.Parameters.AddWithValue("@marketType", marketType);
+            rowCapCommand.Parameters.AddWithValue("@maxRows", maxRows);
+
+            var rowCapDeleted = await rowCapCommand.ExecuteNonQueryAsync(cancellationToken);
+            
+            if (rowCapDeleted > 0)
+            {
+                _logger.LogInformation("Deleted {Count} candles beyond maxRows={MaxRows} for {Symbol} {Interval} {Market}",
+                    rowCapDeleted, maxRows, symbol, interval, marketType);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to trim retention for {Symbol} {Interval} {Market}", symbol, interval, market.ToStringValue());
+        }
+    }
 }

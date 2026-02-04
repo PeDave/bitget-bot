@@ -52,4 +52,15 @@ public interface ICandleRepository
         string interval,
         MarketType market = MarketType.Spot,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Trim retention for a symbol/interval based on time window and max rows
+    /// </summary>
+    Task TrimRetentionAsync(
+        string symbol,
+        string interval,
+        MarketType market,
+        DateTime cutoffTime,
+        int maxRows,
+        CancellationToken cancellationToken = default);
 }
