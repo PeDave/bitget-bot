@@ -16,9 +16,9 @@ public interface ICandleService
     /// <param name="interval">Candle interval (e.g., 1m, 5m, 15m, 1h, 4h, 1d)</param>
     /// <param name="startTime">Optional start time filter</param>
     /// <param name="endTime">Optional end time filter</param>
-    /// <param name="limit">Maximum number of candles to return (default 100, max 1000)</param>
+    /// <param name="limit">Maximum number of candles per request (default 100, max 1000). When both startTime and endTime are provided, this acts as page size for pagination and the method returns all candles in the range.</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Collection of candles</returns>
+    /// <returns>Collection of candles. When startTime and endTime are provided, returns all candles in the date range (potentially more than limit). Otherwise, returns up to limit candles.</returns>
     Task<IEnumerable<CandleDto>> GetCandlesAsync(
         string symbol,
         string interval,
@@ -62,11 +62,9 @@ public class CandleService : ICandleService
             throw new ArgumentException("Interval is required", nameof(interval));
         }
 
-        // Limit to max 1000 candles
-        if (limit > 1000)
-        {
-            limit = 1000;
-        }
+        // When both startTime and endTime are provided, calculate expected candles
+        // Otherwise, limit to max 1000 candles per request
+        int perRequestLimit = Math.Min(limit, 1000);
 
         // Try to get from database first if persistence is enabled
         if (_chartingOptions.EnablePersistence && _candleRepository != null)
@@ -77,16 +75,21 @@ public class CandleService : ICandleService
             var dbCandleList = dbCandles.ToList();
             
             // Check if DB results are sufficient
-            bool isSufficient = dbCandleList.Count >= limit;
+            bool isSufficient = false;
             
             // If we have time constraints, check range coverage
-            if (isSufficient && startTime.HasValue && endTime.HasValue && dbCandleList.Count > 0)
+            if (startTime.HasValue && endTime.HasValue && dbCandleList.Count > 0)
             {
                 var minDbTime = dbCandleList.Min(c => c.OpenTime);
                 var maxDbTime = dbCandleList.Max(c => c.OpenTime);
                 
                 // Check if DB covers the requested range
                 isSufficient = minDbTime <= startTime.Value && maxDbTime >= endTime.Value;
+            }
+            else
+            {
+                // For limit-only queries, check if we have enough candles
+                isSufficient = dbCandleList.Count >= limit;
             }
             
             // If DB data is sufficient, return it
@@ -98,8 +101,8 @@ public class CandleService : ICandleService
             // DB results are insufficient - fetch from REST and merge
             if (dbCandleList.Count > 0)
             {
-                // Fetch from REST API
-                var restCandles = await FetchFromRestApiAsync(symbol, interval, startTime, endTime, limit, cancellationToken);
+                // Fetch from REST API with pagination for full range
+                var restCandles = await FetchFromRestApiAsync(symbol, interval, startTime, endTime, perRequestLimit, cancellationToken);
                 
                 // Merge DB and REST candles, dedupe by OpenTime
                 var mergedCandles = dbCandleList
@@ -107,8 +110,13 @@ public class CandleService : ICandleService
                     .GroupBy(c => c.OpenTime)
                     .Select(g => g.First()) // Take first occurrence (prefer DB data)
                     .OrderBy(c => c.OpenTime)
-                    .Take(limit)
                     .ToList();
+                
+                // Apply limit only for non-range queries
+                if (!startTime.HasValue || !endTime.HasValue)
+                {
+                    mergedCandles = mergedCandles.Take(limit).ToList();
+                }
                 
                 // Persist REST-fetched candles to DB
                 var newCandles = restCandles
@@ -136,8 +144,8 @@ public class CandleService : ICandleService
             }
         }
 
-        // Otherwise fetch from Bitget REST API
-        var candles = await FetchFromRestApiAsync(symbol, interval, startTime, endTime, limit, cancellationToken);
+        // Otherwise fetch from Bitget REST API with pagination for full range
+        var candles = await FetchFromRestApiAsync(symbol, interval, startTime, endTime, perRequestLimit, cancellationToken);
         
         // Persist to database if enabled
         if (_chartingOptions.EnablePersistence && _candleRepository != null && candles.Count > 0)
@@ -168,6 +176,13 @@ public class CandleService : ICandleService
         int limit,
         CancellationToken cancellationToken)
     {
+        // If both startTime and endTime are provided, fetch all candles in range with pagination
+        if (startTime.HasValue && endTime.HasValue)
+        {
+            return await FetchRangeWithPaginationAsync(symbol, interval, startTime.Value, endTime.Value, limit, cancellationToken);
+        }
+        
+        // Otherwise, single request with limit
         using var client = _clientFactory.CreateRestClient();
         
         // Get klines from Bitget Spot API
@@ -194,6 +209,107 @@ public class CandleService : ICandleService
             Volume = k.Volume,
             QuoteVolume = k.QuoteVolume
         }).ToList();
+    }
+
+    private async Task<List<CandleDto>> FetchRangeWithPaginationAsync(
+        string symbol,
+        string interval,
+        DateTime startTime,
+        DateTime endTime,
+        int perRequestLimit,
+        CancellationToken cancellationToken)
+    {
+        var allCandles = new Dictionary<DateTime, CandleDto>(); // Use dictionary for deduplication
+        var currentStartTime = startTime;
+        var intervalTimeSpan = IntervalHelper.ParseIntervalToTimeSpan(interval);
+        
+        // Calculate expected number of candles for safety check
+        var expectedCandles = CalculateExpectedCandles(startTime, endTime, intervalTimeSpan);
+        
+        // Safety limit: max iterations to prevent infinite loops
+        // Allow up to 10x the expected candles, capped at 200 iterations
+        var maxIterations = Math.Min(200, Math.Max(10, (expectedCandles / perRequestLimit + 1) * 2));
+        var iteration = 0;
+        
+        using var client = _clientFactory.CreateRestClient();
+        
+        while (currentStartTime < endTime && iteration < maxIterations)
+        {
+            iteration++;
+            cancellationToken.ThrowIfCancellationRequested();
+            
+            // Fetch next page
+            var result = await client.SpotApiV2.ExchangeData.GetKlinesAsync(
+                symbol: symbol,
+                interval: ParseInterval(interval),
+                startTime: currentStartTime,
+                endTime: endTime,
+                limit: perRequestLimit,
+                ct: cancellationToken);
+            
+            if (!result.Success)
+            {
+                throw new BitgetApiException($"Failed to get candles for {symbol}: {result.Error?.Message ?? "Unknown error"}");
+            }
+            
+            // If no data returned, we've reached the end
+            if (result.Data == null || !result.Data.Any())
+            {
+                break;
+            }
+            
+            // Add candles to dictionary (automatic deduplication by OpenTime)
+            foreach (var k in result.Data)
+            {
+                var candle = new CandleDto
+                {
+                    OpenTime = k.OpenTime,
+                    Open = k.OpenPrice,
+                    High = k.HighPrice,
+                    Low = k.LowPrice,
+                    Close = k.ClosePrice,
+                    Volume = k.Volume,
+                    QuoteVolume = k.QuoteVolume
+                };
+                
+                allCandles[candle.OpenTime] = candle;
+            }
+            
+            // Move to next page: start from the last candle's time + interval
+            var lastCandleTime = result.Data.Max(k => k.OpenTime);
+            var nextStartTime = lastCandleTime.Add(intervalTimeSpan);
+            
+            // If we're not making progress, break to avoid infinite loop
+            if (nextStartTime <= currentStartTime)
+            {
+                break;
+            }
+            
+            currentStartTime = nextStartTime;
+            
+            // If we got fewer candles than requested, we've likely reached the end
+            if (result.Data.Count() < perRequestLimit)
+            {
+                break;
+            }
+        }
+        
+        // Return candles sorted by OpenTime
+        return allCandles.Values.OrderBy(c => c.OpenTime).ToList();
+    }
+
+    private int CalculateExpectedCandles(DateTime startTime, DateTime endTime, TimeSpan intervalTimeSpan)
+    {
+        if (intervalTimeSpan.TotalSeconds <= 0)
+        {
+            return 1000; // Default safe value
+        }
+        
+        var timeRange = endTime - startTime;
+        var expectedCount = (int)(timeRange.TotalSeconds / intervalTimeSpan.TotalSeconds);
+        
+        // Return at least 1, and add some buffer for rounding
+        return Math.Max(1, expectedCount + 10);
     }
 
     private global::Bitget.Net.Enums.V2.KlineInterval ParseInterval(string interval)
