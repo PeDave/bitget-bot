@@ -2,6 +2,7 @@ using BitgetLab.Core.Models;
 using BitgetLab.Core.Options;
 using Microsoft.Extensions.Options;
 using System.Text.Json;
+using System.Globalization;
 
 namespace BitgetLab.Core.Services.Bitget;
 
@@ -298,7 +299,9 @@ public class CandleService : ICandleService
         if (!response.IsSuccessStatusCode)
         {
             var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            throw new BitgetApiException($"Failed to get futures candles for {symbol}: HTTP {response.StatusCode} - {errorContent}");
+            // Limit error message to prevent excessive memory usage
+            var truncatedError = errorContent.Length > 1000 ? errorContent.Substring(0, 1000) + "..." : errorContent;
+            throw new BitgetApiException($"Failed to get futures candles for {symbol}: HTTP {response.StatusCode} - {truncatedError}");
         }
         
         var content = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -330,16 +333,16 @@ public class CandleService : ICandleService
             
             // Bitget format: [timestamp, open, high, low, close, volume, quoteVolume]
             var timestampMs = candleArray[0].GetInt64();
-            var open = decimal.Parse(candleArray[1].GetString() ?? "0");
-            var high = decimal.Parse(candleArray[2].GetString() ?? "0");
-            var low = decimal.Parse(candleArray[3].GetString() ?? "0");
-            var close = decimal.Parse(candleArray[4].GetString() ?? "0");
-            var volume = decimal.Parse(candleArray[5].GetString() ?? "0");
-            var quoteVolume = decimal.Parse(candleArray[6].GetString() ?? "0");
+            var open = decimal.Parse(candleArray[1].GetString() ?? "0", CultureInfo.InvariantCulture);
+            var high = decimal.Parse(candleArray[2].GetString() ?? "0", CultureInfo.InvariantCulture);
+            var low = decimal.Parse(candleArray[3].GetString() ?? "0", CultureInfo.InvariantCulture);
+            var close = decimal.Parse(candleArray[4].GetString() ?? "0", CultureInfo.InvariantCulture);
+            var volume = decimal.Parse(candleArray[5].GetString() ?? "0", CultureInfo.InvariantCulture);
+            var quoteVolume = decimal.Parse(candleArray[6].GetString() ?? "0", CultureInfo.InvariantCulture);
             
             candles.Add(new CandleDto
             {
-                OpenTime = DateTimeOffset.FromUnixTimeMilliseconds(timestampMs).DateTime,
+                OpenTime = DateTimeOffset.FromUnixTimeMilliseconds(timestampMs).UtcDateTime,
                 Open = open,
                 High = high,
                 Low = low,
@@ -370,7 +373,7 @@ public class CandleService : ICandleService
             "3d" => "3D",  // Case-sensitive: uppercase D
             "1w" => "1W",  // Case-sensitive: uppercase W
             "1mo" or "1month" => "1M", // Case-sensitive: uppercase M
-            _ => throw new ArgumentException($"Invalid interval: {interval}. Valid values: 1m, 5m, 15m, 30m, 1h, 4h, 6h, 12h, 1d, 3d, 1w, 1mo, 1month")
+            _ => throw new ArgumentException($"Invalid interval: {interval}. Supported values (case-insensitive): 1m, 5m, 15m, 30m, 1h, 4h, 6h, 12h, 1d, 3d, 1w, 1mo, 1month")
         };
     }
 
