@@ -166,7 +166,8 @@ Both spot and futures markets support the same intervals:
 2. **CandleService** (`src/BitgetLab.Core/Services/Bitget/CandleService.cs`)
    - Routes to `FetchFromSpotApiAsync` or `FetchFromFuturesApiAsync` based on market
    - Uses `client.SpotApiV2.ExchangeData.GetKlinesAsync` for spot
-   - Uses `client.FuturesApiV2.ExchangeData.GetKlinesAsync` for futures
+   - Uses `client.FuturesApiV2.ExchangeData.GetHistoricalKlinesAsync` for futures
+   - **Note**: Futures uses historical endpoint to support startTime/endTime ranges (GetKlinesAsync fails with parameter verification errors when dates are supplied)
 
 3. **Database Schema**
    - Added `market_type VARCHAR(20)` column to `candles` table
