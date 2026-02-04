@@ -198,8 +198,8 @@ public class FuturesSymbolPipelineManager : IFuturesSymbolPipelineManager
     {
         var marketType = market == "futures" ? MarketType.Futures : MarketType.Spot;
 
-        // Sequential backfill for each interval
-        var intervals = new[] { "15m", "30m", "1h", "4h", "1d" };
+        // Sequential backfill for each interval - use configured intervals
+        var intervals = _options.WsIntervals.Concat(_options.RestIntervals).Distinct().ToArray();
         var completed = new List<string>();
 
         foreach (var interval in intervals)
@@ -309,7 +309,9 @@ public class FuturesSymbolPipelineManager : IFuturesSymbolPipelineManager
                     try
                     {
                         var endTime = DateTime.UtcNow;
-                        var startTime = endTime.AddDays(-1); // Sync last day
+                        // Sync recent data - use a small window relative to the interval's lookback
+                        var syncWindow = Math.Min(lookbackDays, 7); // Sync last 7 days or less
+                        var startTime = endTime.AddDays(-syncWindow);
 
                         var candles = await _candleService.GetCandlesAsync(
                             symbol,

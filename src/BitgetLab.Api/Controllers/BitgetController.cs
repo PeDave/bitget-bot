@@ -2052,7 +2052,7 @@ public class BitgetController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to start pipeline for {Symbol} {Market}", symbol, market);
-            return StatusCode(500, new { error = "Failed to start pipeline", details = ex.Message });
+            return StatusCode(500, new { error = "Failed to start pipeline" });
         }
     }
 
@@ -2082,7 +2082,7 @@ public class BitgetController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to stop pipeline for {Symbol} {Market}", symbol, market);
-            return StatusCode(500, new { error = "Failed to stop pipeline", details = ex.Message });
+            return StatusCode(500, new { error = "Failed to stop pipeline" });
         }
     }
 
@@ -2112,7 +2112,7 @@ public class BitgetController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to get pipeline status for {Symbol} {Market}", symbol, market);
-            return StatusCode(500, new { error = "Failed to get pipeline status", details = ex.Message });
+            return StatusCode(500, new { error = "Failed to get pipeline status" });
         }
     }
 }
