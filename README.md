@@ -625,7 +625,11 @@ Retrieves historical OHLCV (Open, High, Low, Close, Volume) candle data for a tr
 - `interval` (string, required) - Candle interval (see supported intervals below)
 - `startTime` (DateTime, optional) - Start time for filtering
 - `endTime` (DateTime, optional) - End time for filtering
-- `limit` (int, default: 100, max: 1000) - Number of candles to retrieve
+- `limit` (int, default: 100, max: 1000) - Number of candles per request. **Note**: When both `startTime` and `endTime` are provided, this acts as a page size for pagination, and the endpoint returns all available candles in the date range (potentially more than `limit`).
+
+**Pagination Behavior**:
+- **Without date range**: Returns up to `limit` candles (max 1000)
+- **With date range** (`startTime` and `endTime`): Automatically paginates to fetch all candles in the range, using `limit` as the page size. This ensures backtests and long-range queries get complete historical data.
 
 **Supported Intervals**:
 - `1m`, `5m`, `15m`, `30m` - Minutes
@@ -663,6 +667,9 @@ curl "http://localhost:3001/api/bitget/market/candles?symbol=ETHUSDT&interval=1d
 
 # Get monthly candles
 curl "http://localhost:3001/api/bitget/market/candles?symbol=BTCUSDT&interval=1mo"
+
+# Get all candles in a date range (pagination happens automatically)
+curl "http://localhost:3001/api/bitget/market/candles?symbol=BTCUSDT&interval=1h&startTime=2025-11-01T00:00:00Z&endTime=2026-02-01T00:00:00Z"
 ```
 
 ##### Get Candle Buffer (In-Memory Ring Buffer)
