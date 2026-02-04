@@ -293,4 +293,150 @@ public class PostgresCandleRepository : ICandleRepository
             return stats;
         }
     }
+
+    public async Task<int> DeleteCandlesOlderThanAsync(
+        string symbol,
+        string interval,
+        DateTime cutoffTime,
+        MarketType market = MarketType.Spot,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(_connectionString))
+        {
+            return 0;
+        }
+
+        try
+        {
+            await using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            var sql = @"
+                DELETE FROM candles
+                WHERE symbol = @symbol 
+                  AND interval = @interval 
+                  AND market_type = @marketType 
+                  AND open_time < @cutoffTime";
+
+            await using var command = new NpgsqlCommand(sql, connection);
+            command.Parameters.AddWithValue("@symbol", symbol);
+            command.Parameters.AddWithValue("@interval", interval);
+            command.Parameters.AddWithValue("@marketType", market.ToStringValue());
+            command.Parameters.AddWithValue("@cutoffTime", cutoffTime);
+
+            var deletedCount = await command.ExecuteNonQueryAsync(cancellationToken);
+            
+            if (deletedCount > 0)
+            {
+                _logger.LogInformation(
+                    "Deleted {Count} candles older than {CutoffTime} for {Symbol} {Interval} {Market}",
+                    deletedCount, cutoffTime, symbol, interval, market.ToStringValue());
+            }
+
+            return deletedCount;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, 
+                "Failed to delete old candles for {Symbol} {Interval} {Market}",
+                symbol, interval, market.ToStringValue());
+            return 0;
+        }
+    }
+
+    public async Task<int> DeleteCandlesBeyondMaxRowsAsync(
+        string symbol,
+        string interval,
+        int maxRows,
+        MarketType market = MarketType.Spot,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(_connectionString))
+        {
+            return 0;
+        }
+
+        try
+        {
+            await using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            // Use a subquery to identify rows beyond maxRows limit
+            var sql = @"
+                DELETE FROM candles
+                WHERE (symbol, interval, market_type, open_time) IN (
+                    SELECT symbol, interval, market_type, open_time
+                    FROM candles
+                    WHERE symbol = @symbol 
+                      AND interval = @interval 
+                      AND market_type = @marketType
+                    ORDER BY open_time DESC
+                    OFFSET @maxRows
+                )";
+
+            await using var command = new NpgsqlCommand(sql, connection);
+            command.Parameters.AddWithValue("@symbol", symbol);
+            command.Parameters.AddWithValue("@interval", interval);
+            command.Parameters.AddWithValue("@marketType", market.ToStringValue());
+            command.Parameters.AddWithValue("@maxRows", maxRows);
+
+            var deletedCount = await command.ExecuteNonQueryAsync(cancellationToken);
+            
+            if (deletedCount > 0)
+            {
+                _logger.LogInformation(
+                    "Deleted {Count} candles beyond max rows limit ({MaxRows}) for {Symbol} {Interval} {Market}",
+                    deletedCount, maxRows, symbol, interval, market.ToStringValue());
+            }
+
+            return deletedCount;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, 
+                "Failed to delete candles beyond max rows for {Symbol} {Interval} {Market}",
+                symbol, interval, market.ToStringValue());
+            return 0;
+        }
+    }
+
+    public async Task<int> GetCandleCountAsync(
+        string symbol,
+        string interval,
+        MarketType market = MarketType.Spot,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(_connectionString))
+        {
+            return 0;
+        }
+
+        try
+        {
+            await using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            var sql = @"
+                SELECT COUNT(*)
+                FROM candles
+                WHERE symbol = @symbol 
+                  AND interval = @interval 
+                  AND market_type = @marketType";
+
+            await using var command = new NpgsqlCommand(sql, connection);
+            command.Parameters.AddWithValue("@symbol", symbol);
+            command.Parameters.AddWithValue("@interval", interval);
+            command.Parameters.AddWithValue("@marketType", market.ToStringValue());
+
+            var result = await command.ExecuteScalarAsync(cancellationToken);
+            return result != null ? Convert.ToInt32(result) : 0;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, 
+                "Failed to get candle count for {Symbol} {Interval} {Market}",
+                symbol, interval, market.ToStringValue());
+            return 0;
+        }
+    }
 }
