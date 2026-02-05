@@ -53,6 +53,7 @@ public class CandleService : ICandleService
     
     // Fixed chunk sizes for futures intervals to avoid 40017 errors on large time ranges
     // These prevent time span errors by splitting large ranges into smaller chunks
+    // Note: Uses case-insensitive comparison to support both uppercase and lowercase interval inputs (e.g., '1H' vs '1h')
     private static readonly Dictionary<string, TimeSpan> FuturesChunkSizes = new(StringComparer.OrdinalIgnoreCase)
     {
         { "1h", TimeSpan.FromDays(7) },    // 1h: 7 days per chunk
@@ -732,6 +733,8 @@ public class CandleService : ICandleService
     /// Aligns a DateTime to the nearest interval boundary (floor).
     /// For example, if interval is 1h and time is 12:34:56, returns 12:00:00.
     /// </summary>
+    private static readonly DateTime Epoch = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+    
     private DateTime AlignToIntervalBoundary(DateTime time, TimeSpan interval)
     {
         if (interval.TotalSeconds <= 0)
@@ -740,14 +743,13 @@ public class CandleService : ICandleService
         }
         
         // Calculate ticks since epoch
-        var epoch = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-        var ticksSinceEpoch = time.Ticks - epoch.Ticks;
+        var ticksSinceEpoch = time.Ticks - Epoch.Ticks;
         
         // Floor to interval boundary
         var intervalTicks = interval.Ticks;
         var alignedTicks = (ticksSinceEpoch / intervalTicks) * intervalTicks;
         
-        return new DateTime(epoch.Ticks + alignedTicks, DateTimeKind.Utc);
+        return new DateTime(Epoch.Ticks + alignedTicks, DateTimeKind.Utc);
     }
 
     /// <summary>

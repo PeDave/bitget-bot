@@ -21,6 +21,9 @@ public class FuturesChunkingTests
     private const int CHUNK_SIZE_1H_DAYS = 7;
     private const int CHUNK_SIZE_4H_DAYS = 30;
     private const int CHUNK_SIZE_1D_DAYS = 180;
+    
+    // Regex pattern for extracting limit parameter from URL
+    private const string LIMIT_REGEX_PATTERN = @"limit=(\d+)";
 
     [Fact]
     public async Task FetchFuturesRange_1h_180Days_SplitsIntoMultipleChunks()
@@ -76,7 +79,7 @@ public class FuturesChunkingTests
         foreach (var url in capturedUrls)
         {
             Assert.Contains("limit=", url);
-            var limitMatch = System.Text.RegularExpressions.Regex.Match(url, @"limit=(\d+)");
+            var limitMatch = System.Text.RegularExpressions.Regex.Match(url, LIMIT_REGEX_PATTERN);
             Assert.True(limitMatch.Success);
             var actualLimit = int.Parse(limitMatch.Groups[1].Value);
             Assert.True(actualLimit <= 200, $"Limit {actualLimit} exceeds maximum 200");
@@ -136,7 +139,7 @@ public class FuturesChunkingTests
         foreach (var url in capturedUrls)
         {
             Assert.Contains("limit=", url);
-            var limitMatch = System.Text.RegularExpressions.Regex.Match(url, @"limit=(\d+)");
+            var limitMatch = System.Text.RegularExpressions.Regex.Match(url, LIMIT_REGEX_PATTERN);
             Assert.True(limitMatch.Success);
             var actualLimit = int.Parse(limitMatch.Groups[1].Value);
             Assert.True(actualLimit <= 200, $"Limit {actualLimit} exceeds maximum 200");
@@ -196,7 +199,7 @@ public class FuturesChunkingTests
         foreach (var url in capturedUrls)
         {
             Assert.Contains("limit=", url);
-            var limitMatch = System.Text.RegularExpressions.Regex.Match(url, @"limit=(\d+)");
+            var limitMatch = System.Text.RegularExpressions.Regex.Match(url, LIMIT_REGEX_PATTERN);
             Assert.True(limitMatch.Success);
             var actualLimit = int.Parse(limitMatch.Groups[1].Value);
             Assert.True(actualLimit <= 200, $"Limit {actualLimit} exceeds maximum 200");
@@ -347,7 +350,7 @@ public class FuturesChunkingTests
         foreach (var url in capturedUrls)
         {
             Assert.Contains("limit=", url);
-            var limitMatch = System.Text.RegularExpressions.Regex.Match(url, @"limit=(\d+)");
+            var limitMatch = System.Text.RegularExpressions.Regex.Match(url, LIMIT_REGEX_PATTERN);
             Assert.True(limitMatch.Success);
             var actualLimit = int.Parse(limitMatch.Groups[1].Value);
             Assert.True(actualLimit <= 200, $"Limit {actualLimit} exceeds maximum 200");
@@ -403,7 +406,7 @@ public class FuturesChunkingTests
         foreach (var url in capturedUrls)
         {
             Assert.Contains("limit=", url);
-            var limitMatch = System.Text.RegularExpressions.Regex.Match(url, @"limit=(\d+)");
+            var limitMatch = System.Text.RegularExpressions.Regex.Match(url, LIMIT_REGEX_PATTERN);
             Assert.True(limitMatch.Success);
             var actualLimit = int.Parse(limitMatch.Groups[1].Value);
             Assert.True(actualLimit <= 200, $"Limit {actualLimit} exceeds maximum 200");
