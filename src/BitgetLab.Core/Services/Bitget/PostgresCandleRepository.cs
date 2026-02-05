@@ -149,6 +149,30 @@ public class PostgresCandleRepository : ICandleRepository
             return;
         }
 
+        // Deduplicate candles by open_time to prevent "21000: ON CONFLICT DO UPDATE command cannot affect row a second time" error
+        // Symbol, interval, and market_type are the same for all candles in this batch
+        var originalCount = candleList.Count;
+        candleList = candleList
+            .GroupBy(c => c.OpenTime)
+            .Select(g => g.First())
+            .OrderBy(c => c.OpenTime)
+            .ToList();
+        
+        var duplicatesRemoved = originalCount - candleList.Count;
+        if (duplicatesRemoved > 0)
+        {
+            _logger.LogWarning("Removed {DuplicatesCount} duplicate candles (by open_time) for {Symbol} {Interval} {Market} before upsert", 
+                duplicatesRemoved, symbol, interval, market.ToStringValue());
+        }
+
+        // Check again after deduplication - possible that all candles were duplicates
+        if (candleList.Count == 0)
+        {
+            _logger.LogDebug("All candles were duplicates for {Symbol} {Interval} {Market}, nothing to upsert", 
+                symbol, interval, market.ToStringValue());
+            return;
+        }
+
         try
         {
             await using var connection = new NpgsqlConnection(_connectionString);

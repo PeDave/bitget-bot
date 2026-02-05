@@ -113,6 +113,17 @@ public class FuturesSymbolPipelineManager : IFuturesSymbolPipelineManager
             try
             {
                 await RunBackfillAsync(symbol, market, context, linkedCts.Token);
+                
+                // Check if backfill completed with errors or failed completely
+                if (context.Status.State == PipelineState.Failed)
+                {
+                    // All intervals failed, don't proceed to live updates
+                    _logger.LogError("Backfill failed for all intervals for {Symbol} {Market}, not starting live updates", symbol, market);
+                    return;
+                }
+                
+                // Start live updates even if some intervals failed (CompletedWithErrors state)
+                // This allows the pipeline to continue tracking successful intervals
                 await StartLiveUpdatesAsync(symbol, market, context, linkedCts.Token);
             }
             catch (OperationCanceledException)
@@ -201,6 +212,7 @@ public class FuturesSymbolPipelineManager : IFuturesSymbolPipelineManager
         // Sequential backfill for each interval - use configured intervals
         var intervals = _options.WsIntervals.Concat(_options.RestIntervals).Distinct().ToArray();
         var completed = new List<string>();
+        var intervalErrors = new Dictionary<string, string>();
 
         foreach (var interval in intervals)
         {
@@ -249,12 +261,34 @@ public class FuturesSymbolPipelineManager : IFuturesSymbolPipelineManager
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to backfill {Symbol} {Interval}", symbol, interval);
-                throw;
+                var errorMsg = $"{ex.GetType().Name}: {ex.Message}";
+                intervalErrors[interval] = errorMsg;
+                context.Status.IntervalErrors = intervalErrors;
+                context.Status.ErrorMessage = errorMsg; // Update last error
+                
+                _logger.LogError(ex, "Failed to backfill {Symbol} {Interval}. Continuing with remaining intervals.", symbol, interval);
+                // Continue with next interval instead of throwing
             }
         }
 
-        context.Status.Progress = "Backfill complete";
+        // Determine final state based on results
+        if (intervalErrors.Count == 0)
+        {
+            // All intervals completed successfully
+            context.Status.Progress = "Backfill complete";
+        }
+        else if (completed.Count > 0)
+        {
+            // Some intervals completed, some failed
+            context.Status.Progress = $"Backfill completed with errors ({completed.Count}/{intervals.Length} intervals succeeded)";
+            context.Status.State = PipelineState.CompletedWithErrors;
+        }
+        else
+        {
+            // All intervals failed
+            context.Status.Progress = "Backfill failed for all intervals";
+            context.Status.State = PipelineState.Failed;
+        }
     }
 
     private async Task StartLiveUpdatesAsync(string symbol, string market, PipelineContext context, CancellationToken cancellationToken)
