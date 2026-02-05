@@ -50,6 +50,26 @@ public class CandleService : ICandleService
     
     // Bitget API limit constraints
     private const int MAX_FUTURES_HISTORY_LIMIT = 200; // Maximum limit for /api/v2/mix/market/history-candles endpoint
+    
+    // Chunk sizes for futures REST backfill (to avoid Bitget 40017 errors on large time ranges)
+    // These are maximum time ranges per single API request for each interval
+    private static readonly Dictionary<string, TimeSpan> FuturesChunkSizes = new()
+    {
+        { "1h", TimeSpan.FromDays(7) },    // 1 hour candles: 7 day chunks
+        { "4h", TimeSpan.FromDays(30) },   // 4 hour candles: 30 day chunks
+        { "1d", TimeSpan.FromDays(180) },  // 1 day candles: 180 day chunks
+        // For other intervals, use conservative defaults
+        { "1m", TimeSpan.FromHours(6) },
+        { "5m", TimeSpan.FromHours(12) },
+        { "15m", TimeSpan.FromDays(3) },
+        { "30m", TimeSpan.FromDays(5) },
+        { "6h", TimeSpan.FromDays(40) },
+        { "12h", TimeSpan.FromDays(60) },
+        { "3d", TimeSpan.FromDays(270) },
+        { "1w", TimeSpan.FromDays(365) },
+        { "1mo", TimeSpan.FromDays(730) },
+        { "1month", TimeSpan.FromDays(730) }
+    };
 
     public CandleService(
         IBitgetClientFactory clientFactory,
@@ -542,6 +562,23 @@ public class CandleService : ICandleService
         // Cap per-request limit to MAX_FUTURES_HISTORY_LIMIT for Bitget futures API constraint
         var effectivePerRequestLimit = Math.Min(perRequestLimit, MAX_FUTURES_HISTORY_LIMIT);
 
+        // Get chunk size for this interval
+        var chunkSize = GetChunkSizeForInterval(interval);
+        var totalRange = endTime - startTime;
+        
+        // If the range is larger than chunk size, split into chunks
+        if (totalRange > chunkSize)
+        {
+            _logger.LogInformation(
+                "Large time range detected for {Symbol} {Interval}: {TotalDays:F1} days. " +
+                "Splitting into chunks of {ChunkDays:F1} days to avoid API errors.",
+                symbol, interval, totalRange.TotalDays, chunkSize.TotalDays);
+            
+            return await FetchFuturesRangeInChunksAsync(
+                symbol, interval, startTime, endTime, effectivePerRequestLimit, chunkSize, cancellationToken);
+        }
+
+        // For small ranges, use existing backward pagination logic
         var allCandles = new Dictionary<DateTime, CandleDto>(); // Use dictionary for deduplication
         var currentEndTime = endTime;
         var intervalTimeSpan = IntervalHelper.ParseIntervalToTimeSpan(interval);
@@ -610,6 +647,239 @@ public class CandleService : ICandleService
         
         // Return at least 1, and add some buffer for rounding
         return Math.Max(1, expectedCount + 10);
+    }
+    
+    /// <summary>
+    /// Get the chunk size for a given interval to avoid Bitget 40017 errors
+    /// </summary>
+    private TimeSpan GetChunkSizeForInterval(string interval)
+    {
+        var normalizedInterval = interval.ToLowerInvariant();
+        if (FuturesChunkSizes.TryGetValue(normalizedInterval, out var chunkSize))
+        {
+            return chunkSize;
+        }
+        
+        // Default to 7 days for unknown intervals
+        _logger.LogWarning("No chunk size configured for interval {Interval}, using default 7 days", interval);
+        return TimeSpan.FromDays(7);
+    }
+    
+    /// <summary>
+    /// Fetch futures candles by splitting the time range into chunks to avoid API errors
+    /// </summary>
+    private async Task<List<CandleDto>> FetchFuturesRangeInChunksAsync(
+        string symbol,
+        string interval,
+        DateTime startTime,
+        DateTime endTime,
+        int effectivePerRequestLimit,
+        TimeSpan chunkSize,
+        CancellationToken cancellationToken)
+    {
+        var allCandles = new Dictionary<DateTime, CandleDto>(); // Use dictionary for deduplication
+        var intervalTimeSpan = IntervalHelper.ParseIntervalToTimeSpan(interval);
+        
+        // Align startTime and endTime to interval boundaries to avoid gaps
+        var alignedStartTime = AlignToIntervalBoundary(startTime, intervalTimeSpan, roundUp: false);
+        var alignedEndTime = AlignToIntervalBoundary(endTime, intervalTimeSpan, roundUp: true);
+        
+        // Generate chunks: [chunkStart, chunkEnd) with half-open intervals
+        var chunks = GenerateChunks(alignedStartTime, alignedEndTime, chunkSize);
+        
+        _logger.LogInformation(
+            "Fetching {Symbol} {Interval} in {ChunkCount} chunks from {StartTime} to {EndTime}",
+            symbol, interval, chunks.Count, 
+            alignedStartTime.ToString("yyyy-MM-dd HH:mm:ss"), 
+            alignedEndTime.ToString("yyyy-MM-dd HH:mm:ss"));
+        
+        var chunkIndex = 0;
+        foreach (var (chunkStart, chunkEnd) in chunks)
+        {
+            chunkIndex++;
+            cancellationToken.ThrowIfCancellationRequested();
+            
+            _logger.LogDebug(
+                "Fetching chunk {ChunkIndex}/{ChunkCount} for {Symbol} {Interval}: {ChunkStart} to {ChunkEnd}",
+                chunkIndex, chunks.Count, symbol, interval,
+                chunkStart.ToString("yyyy-MM-dd HH:mm:ss"),
+                chunkEnd.ToString("yyyy-MM-dd HH:mm:ss"));
+            
+            // Fetch this chunk using backward pagination
+            var chunkCandles = await FetchChunkWithBackwardPaginationAsync(
+                symbol, interval, chunkStart, chunkEnd, effectivePerRequestLimit, intervalTimeSpan, cancellationToken);
+            
+            // Add candles to dictionary (automatic deduplication by OpenTime)
+            foreach (var candle in chunkCandles)
+            {
+                allCandles[candle.OpenTime] = candle;
+            }
+            
+            _logger.LogDebug(
+                "Fetched {CandleCount} candles for chunk {ChunkIndex}/{ChunkCount} ({Symbol} {Interval})",
+                chunkCandles.Count, chunkIndex, chunks.Count, symbol, interval);
+        }
+        
+        _logger.LogInformation(
+            "Completed chunked fetch for {Symbol} {Interval}: {TotalCandles} total candles from {ChunkCount} chunks",
+            symbol, interval, allCandles.Count, chunks.Count);
+        
+        // Return candles sorted by OpenTime ascending
+        return allCandles.Values.OrderBy(c => c.OpenTime).ToList();
+    }
+    
+    /// <summary>
+    /// Align a DateTime to interval boundaries (round down by default)
+    /// </summary>
+    private DateTime AlignToIntervalBoundary(DateTime dateTime, TimeSpan intervalTimeSpan, bool roundUp)
+    {
+        var ticks = dateTime.Ticks;
+        var intervalTicks = intervalTimeSpan.Ticks;
+        
+        if (intervalTicks <= 0)
+        {
+            return dateTime;
+        }
+        
+        var remainder = ticks % intervalTicks;
+        
+        if (remainder == 0)
+        {
+            // Already aligned
+            return dateTime;
+        }
+        
+        if (roundUp)
+        {
+            // Round up to next interval boundary
+            return new DateTime(ticks - remainder + intervalTicks, dateTime.Kind);
+        }
+        else
+        {
+            // Round down to previous interval boundary
+            return new DateTime(ticks - remainder, dateTime.Kind);
+        }
+    }
+    
+    /// <summary>
+    /// Generate time chunks for fetching: [start, end) split into smaller ranges
+    /// </summary>
+    private List<(DateTime chunkStart, DateTime chunkEnd)> GenerateChunks(
+        DateTime startTime,
+        DateTime endTime,
+        TimeSpan chunkSize)
+    {
+        var chunks = new List<(DateTime, DateTime)>();
+        var currentStart = startTime;
+        
+        while (currentStart < endTime)
+        {
+            var currentEnd = currentStart.Add(chunkSize);
+            
+            // Don't exceed the overall endTime
+            if (currentEnd > endTime)
+            {
+                currentEnd = endTime;
+            }
+            
+            // Guard: ensure valid chunk (start < end)
+            if (currentStart >= currentEnd)
+            {
+                _logger.LogWarning(
+                    "Invalid chunk detected: start ({Start}) >= end ({End}). Stopping chunk generation.",
+                    currentStart.ToString("yyyy-MM-dd HH:mm:ss"),
+                    currentEnd.ToString("yyyy-MM-dd HH:mm:ss"));
+                break;
+            }
+            
+            chunks.Add((currentStart, currentEnd));
+            
+            // Next chunk starts where this one ends (half-open interval: [start, end))
+            currentStart = currentEnd;
+        }
+        
+        return chunks;
+    }
+    
+    /// <summary>
+    /// Fetch a single chunk using backward pagination
+    /// </summary>
+    private async Task<List<CandleDto>> FetchChunkWithBackwardPaginationAsync(
+        string symbol,
+        string interval,
+        DateTime chunkStart,
+        DateTime chunkEnd,
+        int effectivePerRequestLimit,
+        TimeSpan intervalTimeSpan,
+        CancellationToken cancellationToken)
+    {
+        var chunkCandles = new Dictionary<DateTime, CandleDto>();
+        var currentEndTime = chunkEnd;
+        
+        // Calculate expected candles for this chunk
+        var expectedCandles = CalculateExpectedCandles(chunkStart, chunkEnd, intervalTimeSpan);
+        
+        // Safety limit for this chunk
+        var maxIterations = Math.Min(MAX_PAGINATION_ITERATIONS, 
+            Math.Max(MIN_PAGINATION_ITERATIONS, (expectedCandles / effectivePerRequestLimit + 1) * SAFETY_MULTIPLIER));
+        var iteration = 0;
+        
+        while (currentEndTime > chunkStart && iteration < maxIterations)
+        {
+            iteration++;
+            cancellationToken.ThrowIfCancellationRequested();
+            
+            try
+            {
+                // Fetch next page stepping backwards
+                var pageCandles = await FetchFromPublicHistoryApiAsync(
+                    symbol, interval, chunkStart, currentEndTime, effectivePerRequestLimit, cancellationToken);
+                
+                // If no data returned, we've reached the end
+                if (pageCandles.Count == 0)
+                {
+                    break;
+                }
+                
+                // Add candles to dictionary (automatic deduplication by OpenTime)
+                foreach (var candle in pageCandles)
+                {
+                    chunkCandles[candle.OpenTime] = candle;
+                }
+                
+                // Move to next page: set endTime to (minOpenTime - 1ms) from previous batch
+                var minCandleTime = pageCandles.Min(k => k.OpenTime);
+                var nextEndTime = minCandleTime.AddMilliseconds(-1);
+                
+                // If we're not making progress, break to avoid infinite loop
+                if (nextEndTime >= currentEndTime)
+                {
+                    break;
+                }
+                
+                currentEndTime = nextEndTime;
+                
+                // If we got fewer candles than requested, we've likely reached the end
+                if (pageCandles.Count < effectivePerRequestLimit)
+                {
+                    break;
+                }
+            }
+            catch (BitgetApiException ex)
+            {
+                // Enhanced error logging with chunk parameters
+                _logger.LogError(
+                    "Bitget API error for chunk {Symbol} {Interval}: {Message}. " +
+                    "ChunkStart: {ChunkStart}, ChunkEnd: {ChunkEnd}, CurrentEndTime: {CurrentEndTime}",
+                    symbol, interval, ex.Message,
+                    chunkStart.ToString("yyyy-MM-dd HH:mm:ss"),
+                    chunkEnd.ToString("yyyy-MM-dd HH:mm:ss"),
+                    currentEndTime.ToString("yyyy-MM-dd HH:mm:ss"));
+                throw;
+            }
+        }
+        
+        return chunkCandles.Values.OrderBy(c => c.OpenTime).ToList();
     }
 
     private global::Bitget.Net.Enums.V2.KlineInterval ParseInterval(string interval)
