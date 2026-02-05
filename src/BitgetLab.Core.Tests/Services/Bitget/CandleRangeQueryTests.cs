@@ -371,4 +371,155 @@ public class CandleRangeQueryTests
             Assert.True(candle.Open >= 190m && candle.Open <= 210m);
         });
     }
+
+    /// <summary>
+    /// Regression test for PostgreSQL syntax error in GetCandlesWithWarmupAsync.
+    /// Validates that the UNION query with ORDER BY/LIMIT in subqueries executes without syntax errors.
+    /// This test specifically addresses the "42601: syntax error at or near UNION" issue.
+    /// </summary>
+    [Fact]
+    public async Task GetCandlesWithWarmupAsync_SqlSyntax_NoPostgresError()
+    {
+        if (!_dbAvailable)
+        {
+            // Skip test if database is not available
+            return;
+        }
+
+        // Arrange - Insert test data
+        var symbol = $"TEST_SQL_SYNTAX_{Guid.NewGuid():N}";
+        var interval = "1h";
+        var baseTime = DateTime.Parse("2026-02-01T00:00:00Z").ToUniversalTime();
+        
+        var testCandles = new List<CandleDto>();
+        for (int i = 0; i < 30; i++)
+        {
+            testCandles.Add(new CandleDto
+            {
+                OpenTime = baseTime.AddHours(i),
+                Open = 50000m + i * 10,
+                High = 50100m + i * 10,
+                Low = 49900m + i * 10,
+                Close = 50050m + i * 10,
+                Volume = 100m,
+                QuoteVolume = 5000000m
+            });
+        }
+
+        await _repository.UpsertCandlesAsync(symbol, interval, testCandles, MarketType.Spot);
+
+        // Act - Execute query with warmup candles (this would fail with old SQL syntax)
+        var startTime = baseTime.AddHours(10);
+        var endTime = baseTime.AddHours(20);
+        var warmupCandles = 5;
+
+        Exception? caughtException = null;
+        IEnumerable<CandleDto>? result = null;
+        
+        try
+        {
+            result = await _repository.GetCandlesWithWarmupAsync(
+                symbol,
+                interval,
+                startTime,
+                endTime,
+                warmupCandles,
+                MarketType.Spot);
+        }
+        catch (Exception ex)
+        {
+            caughtException = ex;
+        }
+
+        // Assert - Should not throw a PostgreSQL syntax error
+        Assert.Null(caughtException);
+        Assert.NotNull(result);
+        
+        var resultList = result.ToList();
+        Assert.NotEmpty(resultList);
+        
+        // Verify we got the expected number of candles (5 warmup + 11 main range = 16 total)
+        Assert.Equal(16, resultList.Count);
+        
+        // Verify results are in ascending order (no duplicates due to DISTINCT ON)
+        for (int i = 1; i < resultList.Count; i++)
+        {
+            Assert.True(resultList[i].OpenTime > resultList[i - 1].OpenTime,
+                "Candles should be in ascending order without duplicates");
+        }
+    }
+
+    /// <summary>
+    /// Regression test to ensure warmupCandles=0 works correctly with the fixed SQL syntax.
+    /// </summary>
+    [Fact]
+    public async Task GetCandlesWithWarmupAsync_ZeroWarmup_SqlSyntaxValid()
+    {
+        if (!_dbAvailable)
+        {
+            // Skip test if database is not available
+            return;
+        }
+
+        // Arrange - Insert test data
+        var symbol = $"TEST_ZERO_WARMUP_{Guid.NewGuid():N}";
+        var interval = "1h";
+        var baseTime = DateTime.Parse("2026-02-01T00:00:00Z").ToUniversalTime();
+        
+        var testCandles = new List<CandleDto>();
+        for (int i = 0; i < 30; i++)
+        {
+            testCandles.Add(new CandleDto
+            {
+                OpenTime = baseTime.AddHours(i),
+                Open = 45000m,
+                High = 46000m,
+                Low = 44000m,
+                Close = 45500m,
+                Volume = 50m,
+                QuoteVolume = 2250000m
+            });
+        }
+
+        await _repository.UpsertCandlesAsync(symbol, interval, testCandles, MarketType.Spot);
+
+        // Act - Query with zero warmup candles
+        var startTime = baseTime.AddHours(10);
+        var endTime = baseTime.AddHours(15);
+        var warmupCandles = 0;
+
+        Exception? caughtException = null;
+        IEnumerable<CandleDto>? result = null;
+        
+        try
+        {
+            result = await _repository.GetCandlesWithWarmupAsync(
+                symbol,
+                interval,
+                startTime,
+                endTime,
+                warmupCandles,
+                MarketType.Spot);
+        }
+        catch (Exception ex)
+        {
+            caughtException = ex;
+        }
+
+        // Assert - Should not throw any errors
+        Assert.Null(caughtException);
+        Assert.NotNull(result);
+        
+        var resultList = result.ToList();
+        Assert.NotEmpty(resultList);
+        
+        // Should return only candles in the main range (6 candles from hour 10 to hour 15 inclusive)
+        Assert.Equal(6, resultList.Count);
+        
+        // All candles should be within the specified range
+        Assert.All(resultList, candle =>
+        {
+            Assert.True(candle.OpenTime >= startTime && candle.OpenTime <= endTime);
+        });
+    }
 }

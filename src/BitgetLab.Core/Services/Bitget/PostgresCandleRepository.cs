@@ -418,30 +418,35 @@ public class PostgresCandleRepository : ICandleRepository
             await connection.OpenAsync(cancellationToken);
 
             // Query to fetch candles in [start, end] plus up to warmupCandles before start
-            // Using UNION to combine warmup candles and main range, then DISTINCT to deduplicate
+            // Using UNION ALL to combine warmup candles and main range, then DISTINCT ON to deduplicate
+            // Note: In Postgres, UNION operands must be parenthesized if they contain ORDER BY/LIMIT
             var sql = @"
-                SELECT DISTINCT open_time, open, high, low, close, volume, quote_volume
+                SELECT DISTINCT ON (open_time) open_time, open, high, low, close, volume, quote_volume
                 FROM (
-                    -- Warmup candles: up to N candles immediately before start time
-                    SELECT open_time, open, high, low, close, volume, quote_volume
-                    FROM candles
-                    WHERE symbol = @symbol 
-                        AND interval = @interval 
-                        AND market_type = @marketType
-                        AND open_time < @startTime
-                    ORDER BY open_time DESC
-                    LIMIT @warmupCandles
+                    (
+                        -- Warmup candles: up to N candles immediately before start time
+                        SELECT open_time, open, high, low, close, volume, quote_volume
+                        FROM candles
+                        WHERE symbol = @symbol 
+                            AND interval = @interval 
+                            AND market_type = @marketType
+                            AND open_time < @startTime
+                        ORDER BY open_time DESC
+                        LIMIT @warmupCandles
+                    )
                     
-                    UNION
+                    UNION ALL
                     
-                    -- Main range candles: all candles in [start, end]
-                    SELECT open_time, open, high, low, close, volume, quote_volume
-                    FROM candles
-                    WHERE symbol = @symbol 
-                        AND interval = @interval 
-                        AND market_type = @marketType
-                        AND open_time >= @startTime
-                        AND open_time <= @endTime
+                    (
+                        -- Main range candles: all candles in [start, end]
+                        SELECT open_time, open, high, low, close, volume, quote_volume
+                        FROM candles
+                        WHERE symbol = @symbol 
+                            AND interval = @interval 
+                            AND market_type = @marketType
+                            AND open_time >= @startTime
+                            AND open_time <= @endTime
+                    )
                 ) combined
                 ORDER BY open_time ASC";
 
