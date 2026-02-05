@@ -237,6 +237,155 @@ curl -X POST http://localhost:3001/api/bitget/orders \
 # Note: side: 0=Buy, 1=Sell; type: 0=Market, 1=Limit
 ```
 
+### Backtest API Endpoint
+
+The `/api/backtest/run` endpoint allows you to backtest RSI mean-reversion strategies on historical spot market data. This endpoint is designed for integration with n8n and other automation tools.
+
+**Key Features:**
+- RSI mean-reversion strategy (long-only)
+- Configurable entry/exit thresholds
+- Automatic candle data warmup for RSI calculation
+- Detailed trade history and equity curve
+- Performance metrics including profit factor
+- Optional API key authentication
+- Request limits to prevent abuse
+
+**Configuration:**
+
+```json
+{
+  "BacktestApi": {
+    "ApiKey": "your-secret-key-here",
+    "MaxTimeRangeDays": 730
+  }
+}
+```
+
+Set `BACKTEST_API_KEY` environment variable or configure in `appsettings.json`. Leave empty to disable authentication (not recommended for production).
+
+**Example Request:**
+
+```bash
+# Basic request (no auth required if ApiKey is empty)
+curl -X POST http://localhost:3001/api/backtest/run \
+  -H "Content-Type: application/json" \
+  -d '{
+    "symbol": "BTCUSDT",
+    "market": "spot",
+    "interval": "1h",
+    "start": "2024-01-01T00:00:00Z",
+    "end": "2024-01-31T23:59:59Z",
+    "strategy": {
+      "type": "rsi-reversion",
+      "rsiPeriod": 14,
+      "entryBelow": 30,
+      "exitAbove": 50
+    },
+    "feesBps": 10,
+    "slippageBps": 0,
+    "initialQuote": 1000
+  }'
+
+# With API key authentication
+curl -X POST http://localhost:3001/api/backtest/run \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: your-secret-key-here" \
+  -d '{
+    "symbol": "BTCUSDT",
+    "market": "spot",
+    "interval": "1h",
+    "start": "2024-01-01T00:00:00Z",
+    "end": "2024-01-31T23:59:59Z",
+    "strategy": {
+      "type": "rsi-reversion",
+      "rsiPeriod": 14,
+      "entryBelow": 30,
+      "exitAbove": 50
+    },
+    "feesBps": 10,
+    "slippageBps": 0,
+    "initialQuote": 1000
+  }'
+```
+
+**Request Parameters:**
+- `symbol`: Trading symbol (e.g., BTCUSDT)
+- `market`: Market type ("spot" only in current version)
+- `interval`: Candle interval (1m, 5m, 15m, 1h, 4h, 1d)
+- `start`: Backtest start time (ISO-8601 UTC)
+- `end`: Backtest end time (ISO-8601 UTC)
+- `strategy.type`: Strategy type ("rsi-reversion")
+- `strategy.rsiPeriod`: RSI calculation period (default: 14)
+- `strategy.entryBelow`: Buy when RSI falls below this level (default: 30)
+- `strategy.exitAbove`: Sell when RSI rises above this level (default: 50)
+- `feesBps`: Trading fees in basis points (default: 10 = 0.1%)
+- `slippageBps`: Slippage in basis points (default: 0)
+- `initialQuote`: Initial balance in quote currency (default: 1000)
+
+**Response:**
+
+```json
+{
+  "summary": {
+    "totalPnL": 145.32,
+    "totalReturnPct": 14.53,
+    "tradeCount": 8,
+    "winRate": 62.5,
+    "maxDrawdownPct": 5.2,
+    "profitFactor": 2.3
+  },
+  "trades": [
+    {
+      "entryTime": "2024-01-05T10:00:00Z",
+      "entryPrice": 42500.00,
+      "exitTime": "2024-01-07T14:00:00Z",
+      "exitPrice": 44200.00,
+      "qty": 0.0235,
+      "pnl": 39.95,
+      "pnlPct": 4.0
+    }
+  ],
+  "equityCurve": [
+    {
+      "time": "2024-01-05T10:00:00Z",
+      "balance": 1000.00
+    },
+    {
+      "time": "2024-01-07T14:00:00Z",
+      "balance": 1039.95
+    }
+  ],
+  "parameters": {
+    "symbol": "BTCUSDT",
+    "market": "spot",
+    "interval": "1h",
+    "start": "2024-01-01T00:00:00Z",
+    "end": "2024-01-31T23:59:59Z",
+    "strategy": {
+      "type": "rsi-reversion",
+      "rsiPeriod": 14,
+      "entryBelow": 30,
+      "exitAbove": 50
+    },
+    "feesBps": 10,
+    "slippageBps": 0,
+    "initialQuote": 1000
+  }
+}
+```
+
+**Integration with n8n:**
+1. Use HTTP Request node with POST method
+2. Set URL to `http://your-api-url/api/backtest/run`
+3. Add `X-Api-Key` header if authentication is enabled
+4. Configure request body with backtest parameters
+5. Process response data in subsequent nodes
+
+**Prerequisites:**
+- PostgreSQL database with candles table
+- Historical candle data backfilled for the requested symbol and date range
+- See `QUICKSTART_BACKTEST.md` for detailed setup instructions
+
 **Note on Earn/Bots**: Balances from Earn and Bots products are included in the `/api/bitget/account/valuation` endpoint, but there is no dedicated Earn/Bots API client in Bitget.Net for querying detailed information about these products.
 
 ## 📦 Project Structure

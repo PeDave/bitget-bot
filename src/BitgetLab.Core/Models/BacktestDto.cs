@@ -35,6 +35,7 @@ public class BacktestSummary
     public decimal InitialBalance { get; set; }
     public decimal FinalBalance { get; set; }
     public decimal ReturnPercent { get; set; }
+    public decimal ProfitFactor { get; set; }
     public List<EquityPoint>? EquityCurve { get; set; }
 }
 

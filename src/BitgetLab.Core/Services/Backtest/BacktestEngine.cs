@@ -43,6 +43,8 @@ public class BacktestResult
 /// </summary>
 public class BacktestEngine : IBacktestEngine
 {
+    private const decimal INFINITE_PROFIT_FACTOR = 999m;
+    
     private readonly ICandleService _candleService;
 
     public BacktestEngine(ICandleService candleService)
@@ -166,6 +168,11 @@ public class BacktestEngine : IBacktestEngine
         var totalPnl = trades.Sum(t => t.Pnl ?? 0);
         var finalBalance = initialBalance + totalPnl;
 
+        // Calculate profit factor (total winning / total losing)
+        var totalWinning = winningTrades.Sum(t => t.Pnl ?? 0);
+        var totalLosing = Math.Abs(losingTrades.Sum(t => t.Pnl ?? 0));
+        var profitFactor = totalLosing > 0 ? totalWinning / totalLosing : (totalWinning > 0 ? INFINITE_PROFIT_FACTOR : 0m);
+
         // Calculate max drawdown
         var runningBalance = initialBalance;
         var peak = initialBalance;
@@ -215,6 +222,7 @@ public class BacktestEngine : IBacktestEngine
             InitialBalance = initialBalance,
             FinalBalance = finalBalance,
             ReturnPercent = initialBalance > 0 ? (finalBalance - initialBalance) / initialBalance * 100 : 0,
+            ProfitFactor = profitFactor,
             EquityCurve = equityCurve
         };
     }
