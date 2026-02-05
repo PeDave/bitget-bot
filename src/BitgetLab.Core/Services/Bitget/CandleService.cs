@@ -319,8 +319,8 @@ public class CandleService : ICandleService
                 "Bitget API error for {Symbol} {Interval}: HTTP {StatusCode}. " +
                 "Limit: {EffectiveLimit}, StartTime: {StartTime} ({StartMs}ms), EndTime: {EndTime} ({EndMs}ms). Error: {Error}",
                 symbol, interval, response.StatusCode, effectiveLimit,
-                startTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "null", startMs?.ToString() ?? "null",
-                endTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "null", endMs?.ToString() ?? "null",
+                startTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "null", startMs,
+                endTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "null", endMs,
                 truncatedError);
             
             throw new BitgetApiException($"Failed to get futures candles for {symbol}: HTTP {response.StatusCode} - {truncatedError}");
@@ -343,8 +343,8 @@ public class CandleService : ICandleService
                 "Bitget API error code {Code} for {Symbol} {Interval}: {Message}. " +
                 "Limit: {EffectiveLimit}, StartTime: {StartTime} ({StartMs}ms), EndTime: {EndTime} ({EndMs}ms)",
                 code, symbol, interval, msg, effectiveLimit,
-                startTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "null", startMs?.ToString() ?? "null",
-                endTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "null", endMs?.ToString() ?? "null");
+                startTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "null", startMs,
+                endTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "null", endMs);
             
             throw new BitgetApiException($"Failed to get futures candles for {symbol}: {code} - {msg}");
         }
