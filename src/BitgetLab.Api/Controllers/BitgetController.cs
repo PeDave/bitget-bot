@@ -1191,6 +1191,259 @@ public class BitgetController : ControllerBase
         }
     }
 
+    [HttpPost("market/candles/backfill")]
+    public async Task<IActionResult> RangeBackfillCandles(
+        [FromBody] RangeBackfillRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var startTime = System.Diagnostics.Stopwatch.StartNew();
+        
+        // Validate request body
+        if (request == null)
+        {
+            return BadRequest(new
+            {
+                ok = false,
+                error = "Request body is required"
+            });
+        }
+
+        // Validate required fields
+        if (string.IsNullOrWhiteSpace(request.Symbol))
+        {
+            return BadRequest(new
+            {
+                ok = false,
+                error = "Symbol is required"
+            });
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Interval))
+        {
+            return BadRequest(new
+            {
+                ok = false,
+                error = "Interval is required"
+            });
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Start))
+        {
+            return BadRequest(new
+            {
+                ok = false,
+                error = "Start is required"
+            });
+        }
+
+        if (string.IsNullOrWhiteSpace(request.End))
+        {
+            return BadRequest(new
+            {
+                ok = false,
+                error = "End is required"
+            });
+        }
+
+        // Parse ISO date strings
+        DateTime startDateTime;
+        DateTime endDateTime;
+        
+        try
+        {
+            startDateTime = DateTime.Parse(request.Start, null, System.Globalization.DateTimeStyles.RoundtripKind);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new
+            {
+                ok = false,
+                error = $"Invalid start date format: {ex.Message}"
+            });
+        }
+
+        try
+        {
+            endDateTime = DateTime.Parse(request.End, null, System.Globalization.DateTimeStyles.RoundtripKind);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new
+            {
+                ok = false,
+                error = $"Invalid end date format: {ex.Message}"
+            });
+        }
+
+        // Ensure start < end
+        if (startDateTime >= endDateTime)
+        {
+            return BadRequest(new
+            {
+                ok = false,
+                error = "Start must be before end"
+            });
+        }
+
+        // Default and clamp limit
+        int limit = request.Limit ?? 200;
+        if (limit < 1) limit = 200;
+        if (limit > 1000) limit = 1000;
+
+        // Parse market type
+        MarketType marketType;
+        try
+        {
+            marketType = MarketTypeExtensions.ParseMarketType(request.Market ?? "spot");
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new
+            {
+                ok = false,
+                error = ex.Message
+            });
+        }
+
+        try
+        {
+            _logger.LogInformation(
+                "Range backfill requested for {Symbol} {Market} {Interval} from {Start} to {End} with limit {Limit}",
+                request.Symbol, request.Market, request.Interval, request.Start, request.End, limit);
+
+            // Build a set of existing candle timestamps efficiently
+            // Instead of loading all candles, just get the timestamps for comparison
+            HashSet<DateTime> existingTimes = new HashSet<DateTime>();
+            if (_candleRepository != null)
+            {
+                var existingCandles = await _candleRepository.GetCandlesAsync(
+                    request.Symbol,
+                    request.Interval,
+                    startDateTime,
+                    endDateTime,
+                    limit: 50000, // Reasonable upper limit for timestamp comparison
+                    market: marketType,
+                    cancellationToken: cancellationToken);
+                
+                existingTimes = new HashSet<DateTime>(existingCandles.Select(c => c.OpenTime));
+            }
+
+            // Fetch candles from Bitget for the full range
+            // The CandleService will handle pagination and fetching in batches
+            var fetchedCandles = await _candleService.GetCandlesAsync(
+                request.Symbol,
+                request.Interval,
+                startTime: startDateTime,
+                endTime: endDateTime,
+                limit: limit,
+                market: marketType,
+                cancellationToken: cancellationToken);
+
+            var fetchedList = fetchedCandles.ToList();
+            var fetchedCount = fetchedList.Count;
+
+            // Calculate statistics
+            int inserted = 0;
+            int updated = 0;
+
+            foreach (var candle in fetchedList)
+            {
+                if (existingTimes.Contains(candle.OpenTime))
+                {
+                    updated++;
+                }
+                else
+                {
+                    inserted++;
+                }
+            }
+
+            // Estimate number of batches based on expected candles in range
+            // Note: This is an approximation as actual batch count depends on API responses
+            var timeSpan = endDateTime - startDateTime;
+            var intervalMinutes = ParseIntervalToMinutes(request.Interval);
+            var expectedCandles = intervalMinutes > 0 ? (int)(timeSpan.TotalMinutes / intervalMinutes) : fetchedCount;
+            var fetchedBatches = expectedCandles > 0 ? Math.Max(1, (expectedCandles + limit - 1) / limit) : 1;
+
+            startTime.Stop();
+
+            var response = new RangeBackfillResponse
+            {
+                Ok = true,
+                Symbol = request.Symbol,
+                Market = request.Market ?? "spot",
+                Interval = request.Interval,
+                Start = request.Start,
+                End = request.End,
+                FetchedBatches = fetchedBatches,
+                FetchedCandles = fetchedCount,
+                Inserted = inserted,
+                Updated = updated,
+                Skipped = 0, // Reserved for future use (e.g., filtered/invalid candles)
+                DurationMs = startTime.ElapsedMilliseconds
+            };
+
+            _logger.LogInformation(
+                "Range backfill completed for {Symbol} {Market} {Interval}: {Fetched} candles ({Inserted} inserted, {Updated} updated) in {Duration}ms",
+                request.Symbol, request.Market, request.Interval, fetchedCount, inserted, updated, startTime.ElapsedMilliseconds);
+
+            return Ok(response);
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Invalid arguments for range backfill");
+            return BadRequest(new
+            {
+                ok = false,
+                error = ex.Message
+            });
+        }
+        catch (BitgetApiException ex)
+        {
+            _logger.LogError(ex, "Bitget API error during range backfill for {Symbol}", request.Symbol);
+            return StatusCode(502, new
+            {
+                ok = false,
+                error = $"Failed to backfill candles for {request.Symbol} from Bitget",
+                message = ex.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to perform range backfill for {Symbol} {Interval}", request.Symbol, request.Interval);
+            return StatusCode(500, new
+            {
+                ok = false,
+                error = "Internal server error",
+                message = ex.Message
+            });
+        }
+    }
+
+    private int ParseIntervalToMinutes(string interval)
+    {
+        if (string.IsNullOrWhiteSpace(interval))
+            return 0;
+
+        var lower = interval.ToLower().Trim();
+        
+        // Extract number and unit
+        var numPart = new string(lower.TakeWhile(char.IsDigit).ToArray());
+        var unitPart = new string(lower.SkipWhile(char.IsDigit).ToArray());
+
+        if (!int.TryParse(numPart, out int value))
+            value = 1;
+
+        return unitPart switch
+        {
+            "m" => value,
+            "h" => value * 60,
+            "d" => value * 1440,
+            "w" => value * 10080,
+            _ => 0
+        };
+    }
+
     [HttpGet("market/latest-candle")]
     public IActionResult GetLatestCandle(
         [FromQuery] string symbol,

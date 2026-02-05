@@ -235,6 +235,86 @@ curl -X POST http://localhost:3001/api/bitget/orders \
   -H "Content-Type: application/json" \
   -d '{"symbol":"BTCUSDT","side":0,"type":0,"quantity":0.001,"price":50000}'
 # Note: side: 0=Buy, 1=Sell; type: 0=Market, 1=Limit
+
+# Range-based candle backfill (ensure historical data exists for a time range)
+curl -X POST http://localhost:3001/api/bitget/market/candles/backfill \
+  -H "Content-Type: application/json" \
+  -d '{
+    "symbol": "BTCUSDT",
+    "market": "spot",
+    "interval": "1h",
+    "start": "2024-01-01T00:00:00Z",
+    "end": "2024-01-31T23:59:59Z",
+    "limit": 200,
+    "maxConcurrency": 3
+  }'
+# Response includes: ok, fetchedBatches, fetchedCandles, inserted, updated, skipped, durationMs
+```
+
+### Range-Based Candle Backfill Endpoint
+
+The `/api/bitget/market/candles/backfill` endpoint provides a reliable way to ensure historical candle data exists for an arbitrary time range. This endpoint is designed for n8n workflows and dashboard integrations that need to guarantee data availability before running backtests.
+
+**Endpoint:** `POST /api/bitget/market/candles/backfill`
+
+**Request Body:**
+- `symbol` (string, required): Trading symbol (e.g., "BTCUSDT")
+- `market` (string, optional): Market type - "spot" or "futures" (default: "spot")
+- `interval` (string, required): Candle interval (e.g., "1m", "15m", "1h", "4h", "1d")
+- `start` (ISO string, required): Start of time range (e.g., "2024-01-01T00:00:00Z")
+- `end` (ISO string, required): End of time range (e.g., "2024-01-31T23:59:59Z")
+- `limit` (number, optional): Batch size for each exchange fetch (default: 200, max: 1000)
+- `maxConcurrency` (number, optional): Concurrency for fetching batches (default: 2-4)
+
+**Response:**
+```json
+{
+  "ok": true,
+  "symbol": "BTCUSDT",
+  "market": "spot",
+  "interval": "1h",
+  "start": "2024-01-01T00:00:00Z",
+  "end": "2024-01-31T23:59:59Z",
+  "fetchedBatches": 4,
+  "fetchedCandles": 744,
+  "inserted": 500,
+  "updated": 244,
+  "skipped": 0,
+  "durationMs": 2340
+}
+```
+
+**Features:**
+- Validates inputs and returns 400 on invalid/missing fields
+- Ensures start < end constraint
+- Fetches candles from Bitget in batches covering the full range
+- Upserts candles into the database reliably (handles duplicates)
+- Safe to call repeatedly (idempotent)
+- Returns detailed metrics: fetched, inserted, updated counts
+
+**Example Usage with n8n:**
+```bash
+# 1. Backfill historical data for a specific range
+curl -X POST http://localhost:3001/api/bitget/market/candles/backfill \
+  -H "Content-Type: application/json" \
+  -d '{
+    "symbol": "ETHUSDT",
+    "market": "futures",
+    "interval": "15m",
+    "start": "2024-01-01T00:00:00Z",
+    "end": "2024-02-01T00:00:00Z",
+    "limit": 500
+  }'
+
+# 2. Then run backtest with guaranteed data availability
+curl -X POST http://localhost:3001/api/backtest/run \
+  -H "Content-Type: application/json" \
+  -d '{
+    "symbol": "ETHUSDT",
+    "interval": "15m",
+    "startDate": "2024-01-01T00:00:00Z",
+    "endDate": "2024-02-01T00:00:00Z"
+  }'
 ```
 
 ### Backtest API Endpoint

@@ -50,3 +50,36 @@ public class CandleBackfillRequest
     public DateTime? EndTime { get; set; }
     public int? Limit { get; set; }
 }
+
+/// <summary>
+/// Request for range-based candle backfill with enhanced tracking
+/// </summary>
+public class RangeBackfillRequest
+{
+    public string Symbol { get; set; } = string.Empty;
+    public string Market { get; set; } = "spot";
+    public string Interval { get; set; } = string.Empty;
+    public string Start { get; set; } = string.Empty;
+    public string End { get; set; } = string.Empty;
+    public int? Limit { get; set; }
+    public int? MaxConcurrency { get; set; }
+}
+
+/// <summary>
+/// Response for range-based candle backfill with detailed metrics
+/// </summary>
+public class RangeBackfillResponse
+{
+    public bool Ok { get; set; }
+    public string Symbol { get; set; } = string.Empty;
+    public string Market { get; set; } = string.Empty;
+    public string Interval { get; set; } = string.Empty;
+    public string Start { get; set; } = string.Empty;
+    public string End { get; set; } = string.Empty;
+    public int FetchedBatches { get; set; }
+    public int FetchedCandles { get; set; }
+    public int Inserted { get; set; }
+    public int Updated { get; set; }
+    public int Skipped { get; set; }
+    public long DurationMs { get; set; }
+}
