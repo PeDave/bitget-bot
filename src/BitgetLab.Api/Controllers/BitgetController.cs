@@ -1311,19 +1311,22 @@ public class BitgetController : ControllerBase
                 "Range backfill requested for {Symbol} {Market} {Interval} from {Start} to {End} with limit {Limit}",
                 request.Symbol, request.Market, request.Interval, request.Start, request.End, limit);
 
-            // Get existing candles from DB to track inserts vs updates
-            var existingCandles = _candleRepository != null
-                ? (await _candleRepository.GetCandlesAsync(
+            // Build a set of existing candle timestamps efficiently
+            // Instead of loading all candles, just get the timestamps for comparison
+            HashSet<DateTime> existingTimes = new HashSet<DateTime>();
+            if (_candleRepository != null)
+            {
+                var existingCandles = await _candleRepository.GetCandlesAsync(
                     request.Symbol,
                     request.Interval,
                     startDateTime,
                     endDateTime,
-                    limit: 100000, // Get all candles in range for comparison
+                    limit: 50000, // Reasonable upper limit for timestamp comparison
                     market: marketType,
-                    cancellationToken: cancellationToken)).ToList()
-                : new List<CandleDto>();
-
-            var existingTimes = new HashSet<DateTime>(existingCandles.Select(c => c.OpenTime));
+                    cancellationToken: cancellationToken);
+                
+                existingTimes = new HashSet<DateTime>(existingCandles.Select(c => c.OpenTime));
+            }
 
             // Fetch candles from Bitget for the full range
             // The CandleService will handle pagination and fetching in batches
@@ -1342,7 +1345,6 @@ public class BitgetController : ControllerBase
             // Calculate statistics
             int inserted = 0;
             int updated = 0;
-            int skipped = 0;
 
             foreach (var candle in fetchedList)
             {
@@ -1356,7 +1358,8 @@ public class BitgetController : ControllerBase
                 }
             }
 
-            // Estimate number of batches (approximate)
+            // Estimate number of batches based on expected candles in range
+            // Note: This is an approximation as actual batch count depends on API responses
             var timeSpan = endDateTime - startDateTime;
             var intervalMinutes = ParseIntervalToMinutes(request.Interval);
             var expectedCandles = intervalMinutes > 0 ? (int)(timeSpan.TotalMinutes / intervalMinutes) : fetchedCount;
@@ -1376,7 +1379,7 @@ public class BitgetController : ControllerBase
                 FetchedCandles = fetchedCount,
                 Inserted = inserted,
                 Updated = updated,
-                Skipped = skipped,
+                Skipped = 0, // Reserved for future use (e.g., filtered/invalid candles)
                 DurationMs = startTime.ElapsedMilliseconds
             };
 
