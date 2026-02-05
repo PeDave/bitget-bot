@@ -397,4 +397,89 @@ public class PostgresCandleRepository : ICandleRepository
             _logger.LogError(ex, "Failed to trim retention for {Symbol} {Interval} {Market}", symbol, interval, market.ToStringValue());
         }
     }
+
+    public async Task<IEnumerable<CandleDto>> GetCandlesWithWarmupAsync(
+        string symbol,
+        string interval,
+        DateTime startTime,
+        DateTime endTime,
+        int warmupCandles = 200,
+        MarketType market = MarketType.Spot,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(_connectionString))
+        {
+            return Enumerable.Empty<CandleDto>();
+        }
+
+        try
+        {
+            await using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            // Query to fetch candles in [start, end] plus up to warmupCandles before start
+            // Using UNION to combine warmup candles and main range, then DISTINCT to deduplicate
+            var sql = @"
+                SELECT DISTINCT open_time, open, high, low, close, volume, quote_volume
+                FROM (
+                    -- Warmup candles: up to N candles immediately before start time
+                    SELECT open_time, open, high, low, close, volume, quote_volume
+                    FROM candles
+                    WHERE symbol = @symbol 
+                        AND interval = @interval 
+                        AND market_type = @marketType
+                        AND open_time < @startTime
+                    ORDER BY open_time DESC
+                    LIMIT @warmupCandles
+                    
+                    UNION
+                    
+                    -- Main range candles: all candles in [start, end]
+                    SELECT open_time, open, high, low, close, volume, quote_volume
+                    FROM candles
+                    WHERE symbol = @symbol 
+                        AND interval = @interval 
+                        AND market_type = @marketType
+                        AND open_time >= @startTime
+                        AND open_time <= @endTime
+                ) combined
+                ORDER BY open_time ASC";
+
+            await using var command = new NpgsqlCommand(sql, connection);
+            command.Parameters.AddWithValue("@symbol", symbol);
+            command.Parameters.AddWithValue("@interval", interval);
+            command.Parameters.AddWithValue("@marketType", market.ToStringValue());
+            command.Parameters.AddWithValue("@startTime", startTime);
+            command.Parameters.AddWithValue("@endTime", endTime);
+            command.Parameters.AddWithValue("@warmupCandles", warmupCandles);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            var candles = new List<CandleDto>();
+
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                candles.Add(new CandleDto
+                {
+                    OpenTime = reader.GetDateTime(0),
+                    Open = reader.GetDecimal(1),
+                    High = reader.GetDecimal(2),
+                    Low = reader.GetDecimal(3),
+                    Close = reader.GetDecimal(4),
+                    Volume = reader.GetDecimal(5),
+                    QuoteVolume = reader.GetDecimal(6)
+                });
+            }
+
+            _logger.LogDebug("Retrieved {Count} candles (with warmup) for {Symbol} {Interval} {Market} from {Start} to {End}", 
+                candles.Count, symbol, interval, market.ToStringValue(), startTime, endTime);
+
+            return candles;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get candles with warmup from database for {Symbol} {Interval} {Market}", 
+                symbol, interval, market.ToStringValue());
+            return Enumerable.Empty<CandleDto>();
+        }
+    }
 }

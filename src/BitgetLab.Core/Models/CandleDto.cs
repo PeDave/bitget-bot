@@ -83,3 +83,18 @@ public class RangeBackfillResponse
     public int Skipped { get; set; }
     public long DurationMs { get; set; }
 }
+
+/// <summary>
+/// Response for candle range query with warmup candles
+/// </summary>
+public class CandleRangeResponse
+{
+    public string Symbol { get; set; } = string.Empty;
+    public string Market { get; set; } = string.Empty;
+    public string Interval { get; set; } = string.Empty;
+    public DateTime Start { get; set; }
+    public DateTime End { get; set; }
+    public int WarmupCandles { get; set; }
+    public int Count { get; set; }
+    public IEnumerable<CandleDto> Candles { get; set; } = Enumerable.Empty<CandleDto>();
+}
