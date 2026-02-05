@@ -21,6 +21,10 @@ builder.Services.Configure<BitgetFuturesOptions>(
 builder.Services.Configure<ChartingOptions>(
     builder.Configuration.GetSection(ChartingOptions.SectionName));
 
+// Configure Pipeline options
+builder.Services.Configure<PipelineOptions>(
+    builder.Configuration.GetSection(PipelineOptions.SectionName));
+
 // Register Bitget services
 builder.Services.AddSingleton<IBitgetClientFactory, BitgetClientFactory>();
 builder.Services.AddSingleton<IBitgetSocketClientFactory, BitgetSocketClientFactory>();
@@ -42,6 +46,9 @@ builder.Services.AddHttpClient();
 builder.Services.AddSingleton<ICandleRepository, PostgresCandleRepository>();
 builder.Services.AddSingleton<ICandleService, CandleService>();
 builder.Services.AddSingleton<IIndicatorService, IndicatorService>();
+
+// Register pipeline manager
+builder.Services.AddSingleton<IFuturesSymbolPipelineManager, FuturesSymbolPipelineManager>();
 
 // Register backtest services
 builder.Services.AddSingleton<IBacktestRepository, PostgresBacktestRepository>();
