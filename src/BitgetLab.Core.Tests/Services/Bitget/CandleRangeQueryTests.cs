@@ -423,9 +423,8 @@ public class CandleRangeQueryTests
 
         var resultList = result.ToList();
 
-        // Assert - Should return candles (count > 0) without SQL error
+        // Assert - Should return candles without SQL error
         Assert.NotEmpty(resultList);
-        Assert.True(resultList.Count > 0, "Should return candles when data exists");
         
         // Verify all candles are within the requested range
         Assert.All(resultList, candle =>
