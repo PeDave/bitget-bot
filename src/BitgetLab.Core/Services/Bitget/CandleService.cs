@@ -1,6 +1,7 @@
 using BitgetLab.Core.Models;
 using BitgetLab.Core.Options;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Logging;
 using System.Text.Json;
 using System.Globalization;
 
@@ -39,6 +40,7 @@ public class CandleService : ICandleService
     private readonly ChartingOptions _chartingOptions;
     private readonly BitgetFuturesOptions _futuresOptions;
     private readonly HttpClient _httpClient;
+    private readonly ILogger<CandleService> _logger;
 
     // Pagination safety constants
     private const int MAX_PAGINATION_ITERATIONS = 200; // Maximum iterations to prevent infinite loops
@@ -51,6 +53,7 @@ public class CandleService : ICandleService
         IOptions<ChartingOptions> chartingOptions,
         IOptions<BitgetFuturesOptions> futuresOptions,
         HttpClient httpClient,
+        ILogger<CandleService> logger,
         ICandleRepository? candleRepository = null)
     {
         _clientFactory = clientFactory;
@@ -58,6 +61,7 @@ public class CandleService : ICandleService
         _chartingOptions = chartingOptions.Value;
         _futuresOptions = futuresOptions.Value;
         _httpClient = httpClient;
+        _logger = logger;
     }
 
     public async Task<IEnumerable<CandleDto>> GetCandlesAsync(
@@ -282,14 +286,16 @@ public class CandleService : ICandleService
         url += $"&limit={limit}";
         
         // Convert DateTime to Unix milliseconds if provided
+        long? startMs = null;
+        long? endMs = null;
         if (startTime.HasValue)
         {
-            var startMs = new DateTimeOffset(startTime.Value).ToUnixTimeMilliseconds();
+            startMs = new DateTimeOffset(startTime.Value).ToUnixTimeMilliseconds();
             url += $"&startTime={startMs}";
         }
         if (endTime.HasValue)
         {
-            var endMs = new DateTimeOffset(endTime.Value).ToUnixTimeMilliseconds();
+            endMs = new DateTimeOffset(endTime.Value).ToUnixTimeMilliseconds();
             url += $"&endTime={endMs}";
         }
         
@@ -301,6 +307,16 @@ public class CandleService : ICandleService
             var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
             // Limit error message to prevent excessive memory usage
             var truncatedError = errorContent.Length > 1000 ? errorContent.Substring(0, 1000) + "..." : errorContent;
+            
+            // Enhanced logging with time range details
+            _logger.LogError(
+                "Bitget API error for {Symbol} {Interval}: HTTP {StatusCode}. " +
+                "StartTime: {StartTime} ({StartMs}ms), EndTime: {EndTime} ({EndMs}ms). Error: {Error}",
+                symbol, interval, response.StatusCode,
+                startTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "null", startMs?.ToString() ?? "null",
+                endTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "null", endMs?.ToString() ?? "null",
+                truncatedError);
+            
             throw new BitgetApiException($"Failed to get futures candles for {symbol}: HTTP {response.StatusCode} - {truncatedError}");
         }
         
@@ -313,8 +329,18 @@ public class CandleService : ICandleService
         // Check for API error
         if (root.TryGetProperty("code", out var codeElement) && codeElement.GetString() != "00000")
         {
+            var code = codeElement.GetString();
             var msg = root.TryGetProperty("msg", out var msgElement) ? msgElement.GetString() : "Unknown error";
-            throw new BitgetApiException($"Failed to get futures candles for {symbol}: {msg}");
+            
+            // Enhanced logging with time range details
+            _logger.LogError(
+                "Bitget API error code {Code} for {Symbol} {Interval}: {Message}. " +
+                "StartTime: {StartTime} ({StartMs}ms), EndTime: {EndTime} ({EndMs}ms)",
+                code, symbol, interval, msg,
+                startTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "null", startMs?.ToString() ?? "null",
+                endTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "null", endMs?.ToString() ?? "null");
+            
+            throw new BitgetApiException($"Failed to get futures candles for {symbol}: {code} - {msg}");
         }
         
         // Parse candles from data array
@@ -498,6 +524,15 @@ public class CandleService : ICandleService
         int perRequestLimit,
         CancellationToken cancellationToken)
     {
+        // Guard: validate time range before making any API calls
+        if (startTime >= endTime)
+        {
+            _logger.LogWarning(
+                "Invalid time range for {Symbol} {Interval}: startTime ({StartTime}) >= endTime ({EndTime}). Returning empty result.",
+                symbol, interval, startTime.ToString("yyyy-MM-dd HH:mm:ss"), endTime.ToString("yyyy-MM-dd HH:mm:ss"));
+            return new List<CandleDto>();
+        }
+
         var allCandles = new Dictionary<DateTime, CandleDto>(); // Use dictionary for deduplication
         var currentEndTime = endTime;
         var intervalTimeSpan = IntervalHelper.ParseIntervalToTimeSpan(interval);

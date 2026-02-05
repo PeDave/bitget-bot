@@ -44,6 +44,11 @@ public class PipelineStatus
     /// Error message if pipeline failed
     /// </summary>
     public string? ErrorMessage { get; set; }
+
+    /// <summary>
+    /// Per-interval error messages (interval -> error)
+    /// </summary>
+    public Dictionary<string, string>? IntervalErrors { get; set; }
 }
 
 /// <summary>
@@ -54,5 +59,6 @@ public enum PipelineState
     Stopped,
     Backfilling,
     Running,
-    Failed
+    Failed,
+    CompletedWithErrors
 }
