@@ -63,4 +63,16 @@ public interface ICandleRepository
         DateTime cutoffTime,
         int maxRows,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Get candles in time range with warmup candles, ordered by time ascending
+    /// </summary>
+    Task<IEnumerable<CandleDto>> GetCandlesWithWarmupAsync(
+        string symbol,
+        string interval,
+        DateTime startTime,
+        DateTime endTime,
+        int warmupCandles = 200,
+        MarketType market = MarketType.Spot,
+        CancellationToken cancellationToken = default);
 }
