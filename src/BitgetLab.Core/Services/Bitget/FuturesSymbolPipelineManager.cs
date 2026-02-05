@@ -247,6 +247,24 @@ public class FuturesSymbolPipelineManager : IFuturesSymbolPipelineManager
                 context.Status.CompletedIntervals = completed.ToArray();
                 _logger.LogInformation("Completed backfill for {Symbol} {Interval}", symbol, interval);
             }
+            catch (BitgetApiException ex) when (ex.Message.Contains("40017") || ex.Message.Contains("Parameter verification failed"))
+            {
+                // Handle invalid time range as a completed backfill (no data available for this range)
+                _logger.LogWarning(ex, 
+                    "Bitget API parameter validation failed for {Symbol} {Interval} (likely invalid time range). " +
+                    "Treating as completed with no data. StartTime={StartTime}, EndTime={EndTime}, LookbackDays={LookbackDays}",
+                    symbol, interval, startTime, endTime, lookbackDays);
+                
+                // Mark as completed since the range is invalid (not a transient error)
+                completed.Add(interval);
+                context.Status.CompletedIntervals = completed.ToArray();
+                
+                // Add informational message to status
+                if (string.IsNullOrEmpty(context.Status.ErrorMessage))
+                {
+                    context.Status.ErrorMessage = $"Note: {interval} completed with API parameter validation warning (invalid time range)";
+                }
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to backfill {Symbol} {Interval}", symbol, interval);

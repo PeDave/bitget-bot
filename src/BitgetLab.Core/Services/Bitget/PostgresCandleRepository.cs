@@ -149,6 +149,22 @@ public class PostgresCandleRepository : ICandleRepository
             return;
         }
 
+        // Deduplicate by OpenTime to prevent 21000 error (duplicate keys in single INSERT)
+        // The primary key constraint is (symbol, interval, open_time, market_type)
+        // Since symbol, interval, and market are the same for all candles in this batch,
+        // we only need to deduplicate by OpenTime
+        var deduplicatedCandles = candleList
+            .GroupBy(c => c.OpenTime)
+            .Select(g => g.First()) // Take first occurrence if duplicates exist
+            .ToList();
+
+        var duplicateCount = candleList.Count - deduplicatedCandles.Count;
+        if (duplicateCount > 0)
+        {
+            _logger.LogDebug("Deduplicated {DuplicateCount} duplicate candles by OpenTime for {Symbol} {Interval} {Market}", 
+                duplicateCount, symbol, interval, market.ToStringValue());
+        }
+
         try
         {
             await using var connection = new NpgsqlConnection(_connectionString);
@@ -162,7 +178,7 @@ public class PostgresCandleRepository : ICandleRepository
                 // PostgreSQL has a limit of ~65535 parameters, we use 10 params per row
                 // So chunk at 1000 rows to stay well under the limit
                 const int chunkSize = 1000;
-                var chunks = candleList
+                var chunks = deduplicatedCandles
                     .Select((candle, index) => new { candle, index })
                     .GroupBy(x => x.index / chunkSize)
                     .Select(g => g.Select(x => x.candle).ToList())
