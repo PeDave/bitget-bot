@@ -20,7 +20,7 @@ public class FuturesChunkingTests
     // Expected chunk sizes from requirements
     private const int CHUNK_SIZE_1H_DAYS = 7;
     private const int CHUNK_SIZE_4H_DAYS = 30;
-    private const int CHUNK_SIZE_1D_DAYS = 180;
+    private const int CHUNK_SIZE_1D_DAYS = 30;
     
     // Regex pattern for extracting limit parameter from URL
     private const string LIMIT_REGEX_PATTERN = @"limit=(\d+)";
@@ -188,12 +188,12 @@ public class FuturesChunkingTests
             market: MarketType.Futures,
             cancellationToken: CancellationToken.None);
 
-        // Assert - Should split into approximately 5 chunks (730 days / 180 days per chunk)
-        // Expected: ceil(730 / 180) = 5 chunks
+        // Assert - Should split into approximately 25 chunks (730 days / 30 days per chunk)
+        // Expected: ceil(730 / 30) = 25 chunks
         var expectedChunks = (int)Math.Ceiling(730.0 / CHUNK_SIZE_1D_DAYS);
         
         Assert.True(capturedUrls.Count >= expectedChunks,
-            $"Expected at least {expectedChunks} API calls for 730-day range with 180-day chunks, got {capturedUrls.Count}");
+            $"Expected at least {expectedChunks} API calls for 730-day range with 30-day chunks, got {capturedUrls.Count}");
         
         // Verify all requests have limit <= 200
         foreach (var url in capturedUrls)
