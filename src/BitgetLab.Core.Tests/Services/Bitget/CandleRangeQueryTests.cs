@@ -371,4 +371,73 @@ public class CandleRangeQueryTests
             Assert.True(candle.Open >= 190m && candle.Open <= 210m);
         });
     }
+
+    [Fact]
+    public async Task GetCandlesWithWarmupAsync_SqlSyntaxRegression_ReturnsCandles()
+    {
+        if (!_dbAvailable)
+        {
+            // Skip test if database is not available
+            return;
+        }
+
+        // Regression test for SQL syntax error "42601: syntax error at or near UNION"
+        // This test simulates the exact scenario from the bug report:
+        // GET /api/candles?symbol=BTCUSDT&market=spot&interval=1h&start=2026-02-01T00:00:00Z&end=2026-02-02T00:00:00Z&warmupCandles=0
+        
+        // Arrange - Insert test candles for BTCUSDT
+        var symbol = $"BTCUSDT_TEST_{Guid.NewGuid():N}";
+        var interval = "1h";
+        var baseTime = DateTime.Parse("2026-02-01T00:00:00Z").ToUniversalTime();
+        
+        var testCandles = new List<CandleDto>();
+        // Create 48 hours of candles (2 days)
+        for (int i = 0; i < 48; i++)
+        {
+            testCandles.Add(new CandleDto
+            {
+                OpenTime = baseTime.AddHours(i),
+                Open = 50000m + (i * 10),
+                High = 50100m + (i * 10),
+                Low = 49900m + (i * 10),
+                Close = 50050m + (i * 10),
+                Volume = 100m,
+                QuoteVolume = 5000000m
+            });
+        }
+
+        await _repository.UpsertCandlesAsync(symbol, interval, testCandles, MarketType.Spot);
+
+        // Act - Query with warmupCandles=0 (this should not fail with SQL syntax error)
+        var startTime = DateTime.Parse("2026-02-01T00:00:00Z").ToUniversalTime();
+        var endTime = DateTime.Parse("2026-02-02T00:00:00Z").ToUniversalTime();
+        var warmupCandles = 0;
+
+        var result = await _repository.GetCandlesWithWarmupAsync(
+            symbol,
+            interval,
+            startTime,
+            endTime,
+            warmupCandles,
+            MarketType.Spot);
+
+        var resultList = result.ToList();
+
+        // Assert - Should return candles without SQL error
+        Assert.NotEmpty(resultList);
+        
+        // Verify all candles are within the requested range
+        Assert.All(resultList, candle =>
+        {
+            Assert.True(candle.OpenTime >= startTime && candle.OpenTime <= endTime,
+                $"Candle time {candle.OpenTime} should be between {startTime} and {endTime}");
+        });
+        
+        // Verify candles are in ascending order
+        for (int i = 1; i < resultList.Count; i++)
+        {
+            Assert.True(resultList[i].OpenTime > resultList[i - 1].OpenTime,
+                "Candles should be in ascending order by time");
+        }
+    }
 }
