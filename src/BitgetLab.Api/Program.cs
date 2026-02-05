@@ -1,4 +1,5 @@
 using BitgetLab.Api.Services;
+using BitgetLab.Api.Controllers;
 using BitgetLab.Core.Options;
 using BitgetLab.Core.Services.Bitget;
 using BitgetLab.Core.Services.Backtest;
@@ -24,6 +25,10 @@ builder.Services.Configure<ChartingOptions>(
 // Configure Pipeline options
 builder.Services.Configure<PipelineOptions>(
     builder.Configuration.GetSection(PipelineOptions.SectionName));
+
+// Configure Backtest API options
+builder.Services.Configure<BacktestApiOptions>(
+    builder.Configuration.GetSection(BacktestApiOptions.SectionName));
 
 // Register Bitget services
 builder.Services.AddSingleton<IBitgetClientFactory, BitgetClientFactory>();
@@ -54,6 +59,7 @@ builder.Services.AddSingleton<IFuturesSymbolPipelineManager, FuturesSymbolPipeli
 builder.Services.AddSingleton<IBacktestRepository, PostgresBacktestRepository>();
 builder.Services.AddSingleton<IBacktestEngine, BacktestEngine>();
 builder.Services.AddSingleton<IBacktestService, BacktestService>();
+builder.Services.AddSingleton<IBacktestDataService, BacktestDataService>();
 
 // Register WebSocketSubscriptionService as singleton and hosted service
 builder.Services.AddSingleton<WebSocketSubscriptionService>();
