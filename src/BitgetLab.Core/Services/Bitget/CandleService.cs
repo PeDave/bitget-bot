@@ -58,7 +58,7 @@ public class CandleService : ICandleService
     {
         { "1h", TimeSpan.FromDays(7) },    // 1h: 7 days per chunk
         { "4h", TimeSpan.FromDays(30) },   // 4h: 30 days per chunk
-        { "1d", TimeSpan.FromDays(180) }   // 1d: 180 days per chunk
+        { "1d", TimeSpan.FromDays(30) }    // 1d: 30 days per chunk
     };
 
     public CandleService(
