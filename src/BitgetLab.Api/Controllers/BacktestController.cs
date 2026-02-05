@@ -26,6 +26,8 @@ public class BacktestController : ControllerBase
         _options = options.Value;
     }
 
+    private const decimal INFINITE_PROFIT_FACTOR = 999m;
+
     /// <summary>
     /// Run a backtest for RSI mean-reversion strategy
     /// </summary>
@@ -105,11 +107,11 @@ public class BacktestController : ControllerBase
             var response = new BacktestRunResponse
             {
                 Summary = summary,
-                Trades = trades.Select(t => new TradeDetail
+                Trades = trades.Where(t => t.ExitTime.HasValue).Select(t => new TradeDetail
                 {
                     EntryTime = t.EntryTime,
                     EntryPrice = t.EntryPrice,
-                    ExitTime = t.ExitTime ?? DateTime.UtcNow, // Should never be null for completed trades
+                    ExitTime = t.ExitTime!.Value,
                     ExitPrice = t.ExitPrice ?? 0,
                     Qty = t.Qty,
                     Pnl = t.Pnl ?? 0,
@@ -302,7 +304,7 @@ public class BacktestController : ControllerBase
         // Calculate profit factor
         var totalWinning = winningTrades.Sum(t => t.Pnl ?? 0);
         var totalLosing = Math.Abs(losingTrades.Sum(t => t.Pnl ?? 0));
-        var profitFactor = totalLosing > 0 ? totalWinning / totalLosing : (totalWinning > 0 ? 999m : 0m);
+        var profitFactor = totalLosing > 0 ? totalWinning / totalLosing : (totalWinning > 0 ? INFINITE_PROFIT_FACTOR : 0m);
 
         // Calculate max drawdown
         var runningBalance = initialBalance;

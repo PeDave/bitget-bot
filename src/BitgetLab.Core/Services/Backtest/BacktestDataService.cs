@@ -27,6 +27,9 @@ public interface IBacktestDataService
 /// </summary>
 public class BacktestDataService : IBacktestDataService
 {
+    private const int MIN_LOOKBACK_CANDLES = 50;
+    private const int LOOKBACK_SAFETY_MULTIPLIER = 3;
+    
     private readonly ICandleService _candleService;
     private readonly ILogger<BacktestDataService> _logger;
 
@@ -49,8 +52,8 @@ public class BacktestDataService : IBacktestDataService
     {
         // Calculate lookback start time
         // We need at least warmupPeriod + 1 candles before startTime for proper indicator calculation
-        // Add a safety buffer of 3x to ensure we have enough data even with gaps
-        var lookbackCandles = Math.Max(warmupPeriod + 1, 50) * 3;
+        // Add a safety buffer to ensure we have enough data even with gaps
+        var lookbackCandles = Math.Max(warmupPeriod + 1, MIN_LOOKBACK_CANDLES) * LOOKBACK_SAFETY_MULTIPLIER;
         var intervalSpan = ParseIntervalToTimeSpan(interval);
         var lookbackStart = startTime - (intervalSpan * lookbackCandles);
 
