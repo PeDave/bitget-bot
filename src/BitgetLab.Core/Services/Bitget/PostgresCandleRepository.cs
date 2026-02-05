@@ -165,8 +165,11 @@ public class PostgresCandleRepository : ICandleRepository
                 duplicatesRemoved, symbol, interval, market.ToStringValue());
         }
 
+        // Check again after deduplication - possible that all candles were duplicates
         if (candleList.Count == 0)
         {
+            _logger.LogDebug("All candles were duplicates for {Symbol} {Interval} {Market}, nothing to upsert", 
+                symbol, interval, market.ToStringValue());
             return;
         }
 
