@@ -47,6 +47,9 @@ public class CandleService : ICandleService
     private const int MIN_PAGINATION_ITERATIONS = 10;  // Minimum iterations regardless of expected candles
     private const int SAFETY_MULTIPLIER = 2;           // Multiply expected iterations by this for buffer
     private const int DEFAULT_EXPECTED_CANDLES = 1000; // Default when interval calculation fails
+    
+    // Bitget API limit constraints
+    private const int MAX_FUTURES_HISTORY_LIMIT = 200; // Maximum limit for /api/v2/mix/market/history-candles endpoint
 
     public CandleService(
         IBitgetClientFactory clientFactory,
@@ -275,6 +278,9 @@ public class CandleService : ICandleService
         int limit,
         CancellationToken cancellationToken)
     {
+        // Cap limit to MAX_FUTURES_HISTORY_LIMIT (200) for Bitget futures API constraint
+        var effectiveLimit = Math.Min(limit, MAX_FUTURES_HISTORY_LIMIT);
+        
         // Map interval to Bitget granularity string (case-sensitive: 1H not 1h)
         var granularity = MapIntervalToGranularity(interval);
         
@@ -283,7 +289,7 @@ public class CandleService : ICandleService
         url += $"?symbol={symbol}";
         url += $"&granularity={granularity}";
         url += $"&productType={_futuresOptions.ProductType}";
-        url += $"&limit={limit}";
+        url += $"&limit={effectiveLimit}";
         
         // Convert DateTime to Unix milliseconds if provided
         long? startMs = null;
@@ -311,8 +317,8 @@ public class CandleService : ICandleService
             // Enhanced logging with time range details
             _logger.LogError(
                 "Bitget API error for {Symbol} {Interval}: HTTP {StatusCode}. " +
-                "StartTime: {StartTime} ({StartMs}ms), EndTime: {EndTime} ({EndMs}ms). Error: {Error}",
-                symbol, interval, response.StatusCode,
+                "Limit: {EffectiveLimit}, StartTime: {StartTime} ({StartMs}ms), EndTime: {EndTime} ({EndMs}ms). Error: {Error}",
+                symbol, interval, response.StatusCode, effectiveLimit,
                 startTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "null", startMs?.ToString() ?? "null",
                 endTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "null", endMs?.ToString() ?? "null",
                 truncatedError);
@@ -335,8 +341,8 @@ public class CandleService : ICandleService
             // Enhanced logging with time range details
             _logger.LogError(
                 "Bitget API error code {Code} for {Symbol} {Interval}: {Message}. " +
-                "StartTime: {StartTime} ({StartMs}ms), EndTime: {EndTime} ({EndMs}ms)",
-                code, symbol, interval, msg,
+                "Limit: {EffectiveLimit}, StartTime: {StartTime} ({StartMs}ms), EndTime: {EndTime} ({EndMs}ms)",
+                code, symbol, interval, msg, effectiveLimit,
                 startTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "null", startMs?.ToString() ?? "null",
                 endTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "null", endMs?.ToString() ?? "null");
             
@@ -533,6 +539,9 @@ public class CandleService : ICandleService
             return new List<CandleDto>();
         }
 
+        // Cap per-request limit to MAX_FUTURES_HISTORY_LIMIT for Bitget futures API constraint
+        var effectivePerRequestLimit = Math.Min(perRequestLimit, MAX_FUTURES_HISTORY_LIMIT);
+
         var allCandles = new Dictionary<DateTime, CandleDto>(); // Use dictionary for deduplication
         var currentEndTime = endTime;
         var intervalTimeSpan = IntervalHelper.ParseIntervalToTimeSpan(interval);
@@ -542,7 +551,7 @@ public class CandleService : ICandleService
         
         // Safety limit: max iterations to prevent infinite loops
         var maxIterations = Math.Min(MAX_PAGINATION_ITERATIONS, 
-            Math.Max(MIN_PAGINATION_ITERATIONS, (expectedCandles / perRequestLimit + 1) * SAFETY_MULTIPLIER));
+            Math.Max(MIN_PAGINATION_ITERATIONS, (expectedCandles / effectivePerRequestLimit + 1) * SAFETY_MULTIPLIER));
         var iteration = 0;
         
         while (currentEndTime > startTime && iteration < maxIterations)
@@ -552,7 +561,7 @@ public class CandleService : ICandleService
             
             // Fetch next page stepping backwards
             var pageCandles = await FetchFromPublicHistoryApiAsync(
-                symbol, interval, startTime, currentEndTime, perRequestLimit, cancellationToken);
+                symbol, interval, startTime, currentEndTime, effectivePerRequestLimit, cancellationToken);
             
             // If no data returned, we've reached the end
             if (pageCandles.Count == 0)
@@ -579,7 +588,7 @@ public class CandleService : ICandleService
             currentEndTime = nextEndTime;
             
             // If we got fewer candles than requested, we've likely reached the end
-            if (pageCandles.Count < perRequestLimit)
+            if (pageCandles.Count < effectivePerRequestLimit)
             {
                 break;
             }
