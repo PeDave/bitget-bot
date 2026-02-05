@@ -423,25 +423,25 @@ public class PostgresCandleRepository : ICandleRepository
                 SELECT DISTINCT open_time, open, high, low, close, volume, quote_volume
                 FROM (
                     -- Warmup candles: up to N candles immediately before start time
-                    SELECT open_time, open, high, low, close, volume, quote_volume
+                    (SELECT open_time, open, high, low, close, volume, quote_volume
                     FROM candles
                     WHERE symbol = @symbol 
                         AND interval = @interval 
                         AND market_type = @marketType
                         AND open_time < @startTime
                     ORDER BY open_time DESC
-                    LIMIT @warmupCandles
+                    LIMIT @warmupCandles)
                     
                     UNION
                     
                     -- Main range candles: all candles in [start, end]
-                    SELECT open_time, open, high, low, close, volume, quote_volume
+                    (SELECT open_time, open, high, low, close, volume, quote_volume
                     FROM candles
                     WHERE symbol = @symbol 
                         AND interval = @interval 
                         AND market_type = @marketType
                         AND open_time >= @startTime
-                        AND open_time <= @endTime
+                        AND open_time <= @endTime)
                 ) combined
                 ORDER BY open_time ASC";
 
