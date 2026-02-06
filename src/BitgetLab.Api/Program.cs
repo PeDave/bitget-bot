@@ -84,8 +84,17 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 
 // Configure the HTTP request pipeline
-app.UseCors("AllowAll");
-app.UseHttpsRedirection();
-app.MapControllers();
+var app = builder.Build();
 
+app.UseCors("AllowAll");
+
+// Only redirect to HTTPS when the app itself terminates TLS.
+// Behind Caddy (reverse proxy), this causes warning: "Failed to determine the https port for redirect."
+if (app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
+
+app.MapControllers();
 app.Run();
+
