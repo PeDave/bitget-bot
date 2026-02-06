@@ -84,8 +84,6 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 
 // Configure the HTTP request pipeline
-var app = builder.Build();
-
 app.UseCors("AllowAll");
 
 // Only redirect to HTTPS when the app itself terminates TLS.
